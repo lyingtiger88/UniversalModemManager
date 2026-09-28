@@ -441,6 +441,346 @@
                         </StackPanel>
                     </ScrollViewer>
 
+                    <ScrollViewer x:Name="NetworkPage"
+                                  Visibility="Collapsed"
+                                  VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="18" MaxWidth="1060"
+                                    HorizontalAlignment="Stretch">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Network"
+                                               FontSize="32"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="Live cellular network information reported by the active modem adapter."
+                                               Opacity="0.7"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                                <Button Grid.Column="1"
+                                        Content="Refresh"
+                                        Click="RefreshNetwork_Click"
+                                        VerticalAlignment="Bottom" />
+                            </Grid>
+
+                            <InfoBar x:Name="NetworkInfoBar"
+                                     IsOpen="False"
+                                     IsClosable="True" />
+
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <Border Style="{StaticResource CardStyle}">
+                                    <StackPanel Spacing="7">
+                                        <TextBlock Text="Connection" Opacity="0.65" />
+                                        <TextBlock x:Name="NetworkConnectionText"
+                                                   Text="—"
+                                                   Style="{StaticResource MetricValueStyle}" />
+                                        <TextBlock x:Name="NetworkTypeText"
+                                                   Text="—"
+                                                   Opacity="0.7" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Column="1" Style="{StaticResource CardStyle}">
+                                    <StackPanel Spacing="7">
+                                        <TextBlock Text="Operator" Opacity="0.65" />
+                                        <TextBlock x:Name="NetworkOperatorText"
+                                                   Text="—"
+                                                   Style="{StaticResource MetricValueStyle}"
+                                                   TextWrapping="Wrap" />
+                                        <TextBlock x:Name="NetworkOperatorCodeText"
+                                                   Text="—"
+                                                   Opacity="0.7" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Column="2" Style="{StaticResource CardStyle}">
+                                    <StackPanel Spacing="7">
+                                        <TextBlock Text="Signal" Opacity="0.65" />
+                                        <TextBlock x:Name="NetworkSignalText"
+                                                   Text="—"
+                                                   Style="{StaticResource MetricValueStyle}" />
+                                        <TextBlock x:Name="NetworkRoamingText"
+                                                   Text="Roaming —"
+                                                   Opacity="0.7" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+
+                            <Border Style="{StaticResource CardStyle}">
+                                <Grid ColumnSpacing="24" RowSpacing="14">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="WAN IP" Opacity="0.65" />
+                                        <TextBlock x:Name="NetworkWanIpText" Text="—" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Spacing="3">
+                                        <TextBlock Text="RSRP" Opacity="0.65" />
+                                        <TextBlock x:Name="NetworkRsrpText" Text="—" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Spacing="3">
+                                        <TextBlock Text="RSRQ" Opacity="0.65" />
+                                        <TextBlock x:Name="NetworkRsrqText" Text="—" FontWeight="SemiBold" />
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="1" Spacing="3">
+                                        <TextBlock Text="SINR" Opacity="0.65" />
+                                        <TextBlock x:Name="NetworkSinrText" Text="—" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="1" Grid.Column="1" Spacing="3">
+                                        <TextBlock Text="Battery" Opacity="0.65" />
+                                        <TextBlock x:Name="NetworkBatteryText" Text="—" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <ScrollViewer x:Name="WifiPage"
+                                  Visibility="Collapsed"
+                                  VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="18" MaxWidth="1060"
+                                    HorizontalAlignment="Stretch">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Wi-Fi"
+                                               FontSize="32"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="Wireless configuration read directly from the modem API."
+                                               Opacity="0.7" />
+                                </StackPanel>
+                                <Button Grid.Column="1"
+                                        Content="Refresh"
+                                        Click="RefreshWifi_Click"
+                                        VerticalAlignment="Bottom" />
+                            </Grid>
+
+                            <InfoBar x:Name="WifiInfoBar"
+                                     IsOpen="False"
+                                     IsClosable="True" />
+
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel Spacing="16">
+                                    <TextBlock Text="Wireless network"
+                                               Style="{StaticResource SectionTitleStyle}" />
+
+                                    <Grid ColumnSpacing="22" RowSpacing="14">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="2*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="SSID" Opacity="0.65" />
+                                            <TextBlock x:Name="WifiSsidText"
+                                                       Text="—"
+                                                       FontSize="24"
+                                                       FontWeight="SemiBold"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Spacing="3">
+                                            <TextBlock Text="Radio" Opacity="0.65" />
+                                            <TextBlock x:Name="WifiEnabledText" Text="—" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" Spacing="3">
+                                            <TextBlock Text="Visibility" Opacity="0.65" />
+                                            <TextBlock x:Name="WifiHiddenText" Text="—" FontWeight="SemiBold" />
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Row="1" Spacing="3">
+                                            <TextBlock Text="Mode" Opacity="0.65" />
+                                            <TextBlock x:Name="WifiModeText" Text="—" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.Column="1" Spacing="3">
+                                            <TextBlock Text="Channel" Opacity="0.65" />
+                                            <TextBlock x:Name="WifiChannelText" Text="—" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.Column="2" Spacing="3">
+                                            <TextBlock Text="Max clients" Opacity="0.65" />
+                                            <TextBlock x:Name="WifiMaxClientsText" Text="—" FontWeight="SemiBold" />
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Row="2" Spacing="3">
+                                            <TextBlock Text="Client isolation" Opacity="0.65" />
+                                            <TextBlock x:Name="WifiIsolationText" Text="—" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <Grid x:Name="SmsPage"
+                          Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="12" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="SMS"
+                                           FontSize="32"
+                                           FontWeight="SemiBold" />
+                                <TextBlock Text="Browse and send messages through the modem's native SMS API."
+                                           Opacity="0.7" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        VerticalAlignment="Bottom">
+                                <ComboBox x:Name="SmsBoxComboBox"
+                                          Width="120"
+                                          SelectedIndex="0"
+                                          SelectionChanged="SmsBoxComboBox_SelectionChanged">
+                                    <ComboBoxItem Content="Inbox" />
+                                    <ComboBoxItem Content="Sent" />
+                                    <ComboBoxItem Content="Draft" />
+                                </ComboBox>
+                                <Button Content="Refresh"
+                                        Click="RefreshSms_Click" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Grid.Row="2" ColumnSpacing="14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="3*" />
+                                <ColumnDefinition Width="2*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Style="{StaticResource CardStyle}">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="10" />
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="10" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <StackPanel>
+                                        <TextBlock Text="Messages"
+                                                   Style="{StaticResource SectionTitleStyle}" />
+                                        <TextBlock x:Name="SmsCountsText"
+                                                   Text="Inbox — • Unread — • Sent — • Draft —"
+                                                   Opacity="0.65"
+                                                   Margin="0,3,0,0" />
+                                    </StackPanel>
+
+                                    <ListView Grid.Row="2"
+                                              x:Name="SmsListView"
+                                              SelectionMode="Single">
+                                        <ListView.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Padding="10"
+                                                        Margin="0,0,0,6"
+                                                        Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                                                        CornerRadius="8">
+                                                    <Grid ColumnSpacing="10">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel Spacing="3">
+                                                            <TextBlock Text="{Binding Phone}"
+                                                                       FontWeight="SemiBold" />
+                                                            <TextBlock Text="{Binding Preview}"
+                                                                       TextWrapping="Wrap"
+                                                                       MaxLines="3"
+                                                                       Opacity="0.82" />
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="1"
+                                                                    HorizontalAlignment="Right">
+                                                            <TextBlock Text="{Binding Date}"
+                                                                       FontSize="12"
+                                                                       Opacity="0.65" />
+                                                            <TextBlock Text="{Binding ReadState}"
+                                                                       FontSize="12"
+                                                                       Opacity="0.65"
+                                                                       HorizontalAlignment="Right" />
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ListView.ItemTemplate>
+                                    </ListView>
+
+                                    <StackPanel Grid.Row="4"
+                                                Orientation="Horizontal"
+                                                Spacing="8"
+                                                HorizontalAlignment="Right">
+                                        <Button Content="Mark read"
+                                                Click="MarkSmsRead_Click" />
+                                        <Button Content="Delete"
+                                                Click="DeleteSms_Click" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <StackPanel Grid.Column="1" Spacing="14">
+                                <Border Style="{StaticResource CardStyle}">
+                                    <StackPanel Spacing="12">
+                                        <TextBlock Text="New message"
+                                                   Style="{StaticResource SectionTitleStyle}" />
+                                        <StackPanel Spacing="6">
+                                            <TextBlock Text="Phone number" />
+                                            <TextBox x:Name="SmsPhoneBox"
+                                                     PlaceholderText="+33..." />
+                                        </StackPanel>
+                                        <StackPanel Spacing="6">
+                                            <TextBlock Text="Message" />
+                                            <TextBox x:Name="SmsMessageBox"
+                                                     PlaceholderText="Write a message..."
+                                                     AcceptsReturn="True"
+                                                     TextWrapping="Wrap"
+                                                     MinHeight="140" />
+                                        </StackPanel>
+                                        <Button x:Name="SendSmsButton"
+                                                Content="Send SMS"
+                                                Style="{StaticResource AccentButtonStyle}"
+                                                HorizontalAlignment="Right"
+                                                Click="SendSms_Click" />
+                                    </StackPanel>
+                                </Border>
+
+                                <InfoBar x:Name="SmsInfoBar"
+                                         IsOpen="False"
+                                         IsClosable="True" />
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
+
                     <ScrollViewer x:Name="PlaceholderPage"
                                   Visibility="Collapsed"
                                   VerticalScrollBarVisibility="Auto">
