@@ -9,6 +9,7 @@ public sealed class ModemAdapterRegistry
     private readonly IReadOnlyList<IModemAdapter> _adapters =
     [
         new HuaweiHiLinkAdapter(),
+        new HuaweiHg532dAdapter(),
         new GenericHttpAdapter()
     ];
 
