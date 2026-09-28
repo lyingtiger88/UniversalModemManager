@@ -196,7 +196,9 @@ public sealed class HuaweiHg532dAdapter :
                 username.Trim();
 
             var challenge =
-                ExtractChallenge(loginSource);
+                await ResolveChallengeAsync(
+                    loginSource,
+                    cancellationToken);
 
             if (UsesChallengeLogin(loginSource))
             {
@@ -677,6 +679,132 @@ public sealed class HuaweiHg532dAdapter :
                 "SHA256",
                 StringComparison.OrdinalIgnoreCase)
         );
+
+    private async Task<string?> ResolveChallengeAsync(
+        string loginSource,
+        CancellationToken cancellationToken)
+    {
+        var inline =
+            ExtractChallenge(loginSource);
+
+        if (!string.IsNullOrWhiteSpace(inline))
+            return inline;
+
+        // Some HG53x builds fetch the challenge through XMLHttpRequest instead
+        // of embedding it in the login page. Inspect only same-origin request
+        // targets that appear close to challenge-related script code.
+        var xhrMatches =
+            Regex.Matches(
+                loginSource,
+                @"open\s*\(\s*['\"](?<method>GET|POST)['\"]\s*,\s*['\"](?<url>[^'\"]+)['\"]",
+                RegexOptions.IgnoreCase |
+                RegexOptions.Singleline);
+
+        foreach (Match match in xhrMatches)
+        {
+            var url =
+                WebUtility.HtmlDecode(
+                    match.Groups["url"].Value)
+                .Trim();
+
+            if (string.IsNullOrWhiteSpace(url) ||
+                !IsSafeLocalResource(url))
+            {
+                continue;
+            }
+
+            var contextStart =
+                Math.Max(
+                    0,
+                    match.Index - 700);
+
+            var contextLength =
+                Math.Min(
+                    loginSource.Length - contextStart,
+                    match.Length + 1400);
+
+            var context =
+                loginSource.Substring(
+                    contextStart,
+                    contextLength);
+
+            var challengeRelated =
+                context.Contains(
+                    "challange",
+                    StringComparison.OrdinalIgnoreCase) ||
+                context.Contains(
+                    "challenge",
+                    StringComparison.OrdinalIgnoreCase);
+
+            if (!challengeRelated)
+                continue;
+
+            try
+            {
+                if (_http is null)
+                    break;
+
+                var method =
+                    match.Groups["method"].Value.Equals(
+                        "POST",
+                        StringComparison.OrdinalIgnoreCase)
+                        ? HttpMethod.Post
+                        : HttpMethod.Get;
+
+                using var request =
+                    new HttpRequestMessage(
+                        method,
+                        NormalizeLocalPath(url));
+
+                if (method == HttpMethod.Post)
+                {
+                    request.Content =
+                        new FormUrlEncodedContent(
+                            Array.Empty<
+                                KeyValuePair<string, string>>());
+                }
+
+                using var response =
+                    await _http.SendAsync(
+                        request,
+                        cancellationToken);
+
+                var body =
+                    await response.Content.ReadAsStringAsync(
+                        cancellationToken);
+
+                var extracted =
+                    ExtractChallenge(body);
+
+                if (!string.IsNullOrWhiteSpace(extracted))
+                    return extracted;
+
+                var trimmed =
+                    WebUtility.HtmlDecode(body)
+                        .Trim()
+                        .Trim(
+                            '\'',
+                            '\"',
+                            ' ',
+                            '\r',
+                            '\n',
+                            '\t');
+
+                if (Regex.IsMatch(
+                        trimmed,
+                        "^[A-Za-z0-9]{8,128}$"))
+                {
+                    return trimmed;
+                }
+            }
+            catch
+            {
+                // Continue with the next candidate request.
+            }
+        }
+
+        return null;
+    }
 
     private static string? ExtractChallenge(
         string html)
