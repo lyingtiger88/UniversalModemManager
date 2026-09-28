@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Windows.Graphics;
 using UniversalModemManager.Core;
 using UniversalModemManager.Models;
 using UniversalModemManager.Services;
@@ -33,6 +34,7 @@ public sealed partial class MainWindow : Window
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
+        AppWindow.Resize(new SizeInt32(1280, 820));
 
         try
         {
