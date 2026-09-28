@@ -565,8 +565,8 @@ public sealed class GenericHttpAdapter : IModemAdapter
         // First try explicit model-like labels commonly embedded in router HTML/JS.
         string[] patterns =
         [
-            @"(?:model(?:name|no|number)?|product(?:name|model)?)\s*[:=]\s*[\"']?(?<model>[A-Za-z0-9][A-Za-z0-9._\-/ ]{2,30})",
-            @"(?:device_name|devicename)\s*[:=]\s*[\"'](?<model>[^\"']{3,32})[\"']"
+            "(?:model(?:name|no|number)?|product(?:name|model)?)\\s*[:=]\\s*[\\\"']?(?<model>[A-Za-z0-9][A-Za-z0-9._\\-/ ]{2,30})",
+            "(?:device_name|devicename)\\s*[:=]\\s*[\\\"'](?<model>[^\\\"']{3,32})[\\\"']"
         ];
 
         foreach (var pattern in patterns)
