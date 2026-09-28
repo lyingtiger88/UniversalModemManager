@@ -55,3 +55,18 @@ dotnet build -c Release
 ```
 
 The project is currently unpackaged and uses the Windows App SDK runtime self-contained deployment option for easier testing.
+
+
+## Current functional Huawei HiLink features
+
+The first production adapter now supports:
+
+- Live dashboard and network telemetry
+- Admin authentication with HiLink session/CSRF handling
+- Wi-Fi settings read and update
+- Connected Wi-Fi client discovery
+- Session, monthly and lifetime traffic counters
+- SMS inbox/sent/draft browsing, send, mark-read and delete
+- Real diagnostics covering gateway ping, adapter probe, authentication and supported APIs
+
+Per-client traffic is shown only when firmware exposes real counters. Unsupported values remain N/A.
