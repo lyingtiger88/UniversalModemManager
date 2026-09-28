@@ -29,7 +29,7 @@ public sealed partial class MainWindow : Window
         new(StringComparer.OrdinalIgnoreCase)
         {
             ["Auto detect"] = ["Auto detect"],
-            ["Huawei"] = ["Auto detect", "E5573 / E5573Cs", "E5577", "B315", "B525", "B612", "B818", "Other / Unknown"],
+            ["Huawei"] = ["Auto detect", "HG532d", "E5573 / E5573Cs", "E5577", "B315", "B525", "B612", "B818", "Other / Unknown"],
             ["ZTE"] = ["Auto detect", "MF286", "MF293", "MC801", "MC888", "Other / Unknown"],
             ["TP-Link"] = ["Auto detect", "MR600", "MR6400", "M7350", "Other / Unknown"],
             ["D-Link"] = ["Auto detect", "Other / Unknown"],
