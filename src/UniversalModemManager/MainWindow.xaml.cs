@@ -302,8 +302,7 @@ public sealed partial class MainWindow : Window
         }
 
         ProfileStateText.Text =
-            $"{_profile.DisplayName}  •  {_profile.Manufacturer} {_profile.Model}
-{_profile.Gateway}";
+            $"{_profile.DisplayName}  •  {_profile.Manufacturer} {_profile.Model}\n{_profile.Gateway}";
         LockBadgeText.Text = locked ? "Locked" : "Unlocked";
         LockBadgeIcon.Glyph = locked ? "" : "";
 
