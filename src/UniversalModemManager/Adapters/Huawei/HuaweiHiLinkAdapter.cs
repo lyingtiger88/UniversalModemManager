@@ -12,6 +12,9 @@ namespace UniversalModemManager.Adapters.Huawei;
 public sealed class HuaweiHiLinkAdapter :
     IModemAdapter,
     IModemDashboardProvider,
+    IModemNetworkProvider,
+    IModemWifiProvider,
+    IModemSmsProvider,
     IModemAuthenticationProvider,
     IDisposable
 {
@@ -36,6 +39,7 @@ public sealed class HuaweiHiLinkAdapter :
         ModemCapability.NetworkStatus |
         ModemCapability.Wifi |
         ModemCapability.WifiClients |
+        ModemCapability.Sms |
         ModemCapability.Battery;
 
     public async Task<ModemProbeResult> ProbeAsync(
@@ -155,6 +159,226 @@ public sealed class HuaweiHiLinkAdapter :
             Rsrp: Value(signal, "rsrp", "RSRP"),
             Rsrq: Value(signal, "rsrq", "RSRQ"),
             Sinr: Value(signal, "sinr", "SINR"));
+    }
+
+    public async Task<ModemNetworkSnapshot> GetNetworkAsync(
+        ModemCandidate candidate,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureClient(candidate.Gateway);
+        await EnsureSessionAsync(cancellationToken);
+
+        var status = await TryGetXmlAsync("api/monitoring/status", cancellationToken);
+        var signal = await TryGetXmlAsync("api/device/signal", cancellationToken);
+        var plmn = await TryGetXmlAsync("api/net/current-plmn", cancellationToken);
+
+        var signalIcon = ParseInt(Value(status, "SignalIcon"));
+        var maxSignal = ParseInt(Value(status, "maxsignal")) ?? 5;
+        int? signalPercent = null;
+
+        if (signalIcon is not null && maxSignal > 0)
+        {
+            signalPercent = Math.Clamp(
+                (int)Math.Round(signalIcon.Value * 100d / maxSignal),
+                0,
+                100);
+        }
+
+        var directSignal = ParseInt(Value(status, "SignalStrength"));
+        if (directSignal is >= 0 and <= 100)
+            signalPercent = directSignal;
+
+        var roamingRaw = Value(status, "RoamingStatus", "roamingstatus");
+        bool? roaming = roamingRaw switch
+        {
+            "1" => true,
+            "0" => false,
+            _ => null
+        };
+
+        return new ModemNetworkSnapshot(
+            ConnectionState: MapConnectionStatus(Value(status, "ConnectionStatus")),
+            NetworkType: MapNetworkType(Value(status, "CurrentNetworkTypeEx", "CurrentNetworkType")),
+            OperatorName: Value(plmn, "FullName", "ShortName", "Name"),
+            OperatorCode: Value(plmn, "Numeric", "MccMnc", "PLMN"),
+            WanIp: Value(status, "WanIPAddress", "WanIPv6Address"),
+            SignalPercent: signalPercent,
+            Rsrp: Value(signal, "rsrp", "RSRP"),
+            Rsrq: Value(signal, "rsrq", "RSRQ"),
+            Sinr: Value(signal, "sinr", "SINR"),
+            BatteryPercent: ParseBatteryPercent(status),
+            IsRoaming: roaming);
+    }
+
+    public async Task<ModemWifiSnapshot> GetWifiAsync(
+        ModemCandidate candidate,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureClient(candidate.Gateway);
+        await EnsureSessionAsync(cancellationToken);
+
+        var xml = await GetXmlAsync(
+            "api/wlan/basic-settings",
+            cancellationToken,
+            throwOnApiError: false);
+
+        if (xml.Name.LocalName.Equals("error", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ModemWifiSnapshot(
+                null, null, null, null, null, null, null);
+        }
+
+        return new ModemWifiSnapshot(
+            Ssid: Value(xml, "WifiSsid", "SSID", "ssid"),
+            Enabled: ParseBool01(Value(xml, "WifiEnable")),
+            Hidden: ParseBool01(Value(xml, "WifiHide")),
+            Channel: Value(xml, "WifiChannel"),
+            Mode: Value(xml, "WifiMode"),
+            MaxClients: ParseInt(Value(xml, "WifiMaxAssoc", "TotalWifiUser")),
+            ClientIsolation: ParseBool01(Value(xml, "WifiIsolate")));
+    }
+
+    public async Task<SmsCounts> GetSmsCountsAsync(
+        ModemCandidate candidate,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureClient(candidate.Gateway);
+        await EnsureSessionAsync(cancellationToken);
+
+        var xml = await GetXmlAsync("api/sms/sms-count", cancellationToken);
+
+        return new SmsCounts(
+            LocalUnread: ParseInt(Value(xml, "LocalUnread")) ?? 0,
+            LocalInbox: ParseInt(Value(xml, "LocalInbox")) ?? 0,
+            LocalOutbox: ParseInt(Value(xml, "LocalOutbox")) ?? 0,
+            LocalDraft: ParseInt(Value(xml, "LocalDraft")) ?? 0,
+            SimUnread: ParseInt(Value(xml, "SimUnread")) ?? 0,
+            SimInbox: ParseInt(Value(xml, "SimInbox")) ?? 0);
+    }
+
+    public async Task<IReadOnlyList<SmsMessage>> GetSmsMessagesAsync(
+        ModemCandidate candidate,
+        SmsBoxType box,
+        int page = 1,
+        int readCount = 20,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureClient(candidate.Gateway);
+        await EnsureSessionAsync(cancellationToken);
+
+        if (page < 1)
+            page = 1;
+
+        readCount = Math.Clamp(readCount, 1, 20);
+
+        var payload = new XElement(
+            "request",
+            new XElement("PageIndex", page),
+            new XElement("ReadCount", readCount),
+            new XElement("BoxType", (int)box),
+            new XElement("SortType", 0),
+            new XElement("Ascending", 0),
+            new XElement("UnreadPreferred", 0));
+
+        var xml = await PostXmlAsync(
+            "api/sms/sms-list",
+            payload,
+            cancellationToken);
+
+        return xml.Descendants()
+            .Where(x => x.Name.LocalName.Equals(
+                "Message",
+                StringComparison.OrdinalIgnoreCase))
+            .Select(message => new SmsMessage(
+                Index: Value(message, "Index") ?? string.Empty,
+                Phone: Value(message, "Phone") ?? "Unknown",
+                Content: Value(message, "Content") ?? string.Empty,
+                Date: Value(message, "Date") ?? string.Empty,
+                IsRead: Value(message, "Smstat", "Read") == "1",
+                SmsType: Value(message, "SmsType"),
+                Sca: Value(message, "Sca")))
+            .Where(x => !string.IsNullOrWhiteSpace(x.Index))
+            .ToList();
+    }
+
+    public async Task SendSmsAsync(
+        ModemCandidate candidate,
+        string phone,
+        string message,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureClient(candidate.Gateway);
+        await EnsureSessionAsync(cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(phone))
+            throw new ArgumentException(
+                "A destination phone number is required.",
+                nameof(phone));
+
+        if (string.IsNullOrWhiteSpace(message))
+            throw new ArgumentException(
+                "The SMS message is empty.",
+                nameof(message));
+
+        var payload = new XElement(
+            "request",
+            new XElement("Index", -1),
+            new XElement("Phones",
+                new XElement("Phone", phone.Trim())),
+            new XElement("Sca", string.Empty),
+            new XElement("Content", message),
+            new XElement("Length", message.Length),
+            new XElement("Reserved", 1),
+            new XElement(
+                "Date",
+                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")));
+
+        var result = await PostXmlAsync(
+            "api/sms/send-sms",
+            payload,
+            cancellationToken);
+
+        if (!IsOkResponse(result))
+            throw new HuaweiHiLinkException(
+                "The modem did not confirm SMS submission.");
+    }
+
+    public async Task MarkSmsReadAsync(
+        ModemCandidate candidate,
+        string index,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureClient(candidate.Gateway);
+
+        var result = await PostXmlAsync(
+            "api/sms/set-read",
+            new XElement(
+                "request",
+                new XElement("Index", index)),
+            cancellationToken);
+
+        if (!IsOkResponse(result))
+            throw new HuaweiHiLinkException(
+                "The modem did not confirm the read-state change.");
+    }
+
+    public async Task DeleteSmsAsync(
+        ModemCandidate candidate,
+        string index,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureClient(candidate.Gateway);
+
+        var result = await PostXmlAsync(
+            "api/sms/delete-sms",
+            new XElement(
+                "request",
+                new XElement("Index", index)),
+            cancellationToken);
+
+        if (!IsOkResponse(result))
+            throw new HuaweiHiLinkException(
+                "The modem did not confirm SMS deletion.");
     }
 
     public async Task<ModemAuthenticationState> GetAuthenticationStateAsync(
@@ -693,6 +917,13 @@ public sealed class HuaweiHiLinkAdapter :
     private static int? ParseInt(string? value) =>
         int.TryParse(value, out var result) ? result : null;
 
+    private static bool? ParseBool01(string? value) => value switch
+    {
+        "1" => true,
+        "0" => false,
+        _ => null
+    };
+
     private static string? ErrorCode(XElement xml) =>
         Value(xml, "code", "Code");
 
@@ -719,6 +950,12 @@ public sealed class HuaweiHiLinkAdapter :
             "108003" => "The admin user is already logged in.",
             "108006" => "Huawei admin login is required.",
             "108007" => "Huawei admin login is temporarily locked after failed attempts.",
+            "113017" => "The SMS request contains an invalid or unsupported argument.",
+            "113018" => "The SMS operation timed out.",
+            "113020" => "The modem could not query the requested SMS list.",
+            "113036" => "The modem could not delete the SMS.",
+            "113053" => "SMS storage does not have enough free space.",
+            "113054" => "The destination phone number is too long.",
             "125001" => "Invalid Huawei request verification token.",
             "125002" => "Invalid Huawei request verification token.",
             "125003" => "Invalid Huawei session.",
