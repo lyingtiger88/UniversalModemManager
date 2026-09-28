@@ -16,9 +16,14 @@ public sealed partial class MainWindow : Window
 {
     private readonly ModemProfileStore _profileStore = new();
     private readonly ModemAdapterRegistry _adapterRegistry = new();
+    private readonly ContactStore _contactStore = new();
 
     private ModemProfile? _profile;
     private IModemAdapter? _activeAdapter;
+    private List<Contact> _contacts = [];
+    private List<SmsConversation> _smsConversations = [];
+    private Guid? _editingContactId;
+    private string? _selectedSmsRecipientNumber;
 
     private readonly Dictionary<string, string[]> _models =
         new(StringComparer.OrdinalIgnoreCase)
@@ -66,6 +71,9 @@ public sealed partial class MainWindow : Window
     {
         Activated -= MainWindow_Activated;
 
+        _contacts = await _contactStore.LoadAsync();
+        RefreshContactsList();
+
         _profile = await _profileStore.LoadAsync();
         ApplyProfileToUi();
 
@@ -80,6 +88,7 @@ public sealed partial class MainWindow : Window
         try
         {
             _activeAdapter = await ResolveProfileAdapterAsync();
+            ApplyAdapterCapabilities(_activeAdapter);
             ApplyProfileToUi();
             await RefreshAuthenticationUiAsync(
                 _activeAdapter,
