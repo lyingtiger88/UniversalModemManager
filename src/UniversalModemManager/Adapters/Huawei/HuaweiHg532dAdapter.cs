@@ -121,15 +121,16 @@ public sealed class HuaweiHg532dAdapter :
                 allowFailureStatus: true);
 
             var loginVisible = LooksLikeLoginPage(page);
+            var hasSession = HasAuthenticatedSessionCookie();
 
             return new ModemAuthenticationState(
                 Supported: true,
-                IsLoggedIn: !loginVisible,
+                IsLoggedIn: hasSession || !loginVisible,
                 IsLocked: false,
                 RemainingWaitSeconds: 0,
-                Detail: loginVisible
-                    ? "HG532d web login is available."
-                    : "HG532d web session appears authenticated.");
+                Detail: hasSession || !loginVisible
+                    ? "HG532d web session appears authenticated."
+                    : "HG532d web login is available.");
         }
         finally
         {
@@ -166,56 +167,122 @@ public sealed class HuaweiHg532dAdapter :
                 cancellationToken,
                 allowFailureStatus: true);
 
-            if (!LooksLikeLoginPage(loginPage))
+            if (HasAuthenticatedSessionCookie() ||
+                !LooksLikeLoginPage(loginPage))
             {
-                return new ModemLoginResult(
-                    true,
-                    "The HG532d session is already authenticated.",
-                    new ModemAuthenticationState(
-                        true,
-                        true,
-                        false,
-                        0,
-                        "Authenticated HG532d web session."));
+                return SuccessfulLogin(
+                    "The HG532d session is already authenticated.");
             }
+
+            // Older HG532 firmware variants do not all use the same login
+            // transform. Read the actual page + same-origin JS before choosing.
+            var loginSource =
+                await BuildLoginSourceAsync(
+                    loginPage,
+                    cancellationToken);
 
             var action =
                 DetectLoginAction(loginPage) ??
+                DetectLoginAction(loginSource) ??
                 "/index/login.cgi";
-
-            var encodedPassword =
-                PageUsesHashedPassword(loginPage)
-                    ? EncodeLegacyHuaweiPassword(password)
-                    : password;
 
             var fields =
                 ExtractHiddenFields(loginPage);
 
-            fields["Username"] = username.Trim();
-            fields["Password"] = encodedPassword;
+            foreach (var pair in ExtractHiddenFields(loginSource))
+                fields[pair.Key] = pair.Value;
 
-            // Some HG532 firmware expects this cookie state before accepting
-            // the legacy login form.
+            fields["Username"] =
+                username.Trim();
+
+            var challenge =
+                ExtractChallenge(loginSource);
+
+            if (UsesChallengeLogin(loginSource))
+            {
+                if (string.IsNullOrWhiteSpace(challenge))
+                {
+                    return Failure(
+                        "This HG532d firmware uses challenge-response login, but the current adapter could not extract the challenge token from its login page/scripts. No additional password attempts were sent.");
+                }
+
+                fields["challange"] = challenge;
+                fields["Password"] =
+                    EncodeChallengeHuaweiPassword(
+                        password,
+                        challenge);
+            }
+            else if (PageUsesHashedPassword(loginSource))
+            {
+                fields["Password"] =
+                    EncodeLegacyHuaweiPassword(password);
+            }
+            else
+            {
+                fields["Password"] = password;
+            }
+
+            // Huawei HG53x firmware expects different navigation cookies for
+            // admin vs limited-user accounts.
             SetCookie("Language", "en");
-            SetCookie("FirstMenu", "Admin_0");
-            SetCookie("SecondMenu", "Admin_0_0");
-            SetCookie("ThirdMenu", "Admin_0_0_0");
 
-            using var content =
-                new FormUrlEncodedContent(fields);
+            var isAdmin =
+                username.Trim().Equals(
+                    "admin",
+                    StringComparison.OrdinalIgnoreCase);
+
+            SetCookie(
+                "FirstMenu",
+                isAdmin ? "Admin_0" : "User_2");
+            SetCookie(
+                "SecondMenu",
+                isAdmin ? "Admin_0_0" : "User_2_1");
+            SetCookie(
+                "ThirdMenu",
+                isAdmin ? "Admin_0_0_0" : "User_2_1_0");
+
+            using var request =
+                new HttpRequestMessage(
+                    HttpMethod.Post,
+                    action)
+                {
+                    Content =
+                        new FormUrlEncodedContent(fields)
+                };
+
+            request.Headers.Referrer =
+                new Uri(
+                    _baseUri!,
+                    "/html/index.asp");
 
             using var response =
-                await _http!.PostAsync(
-                    action,
-                    content,
+                await _http!.SendAsync(
+                    request,
                     cancellationToken);
 
             var responseBody =
                 await response.Content.ReadAsStringAsync(
                     cancellationToken);
 
-            // Follow up with the root page because several HG532 builds return
-            // HTTP 200 even when the submitted credentials are wrong.
+            var explicitSuccess =
+                responseBody.Contains(
+                    "var pageName = '/html/content.asp'",
+                    StringComparison.OrdinalIgnoreCase) ||
+                responseBody.Contains(
+                    "/html/content.asp",
+                    StringComparison.OrdinalIgnoreCase);
+
+            var explicitFailure =
+                responseBody.Contains(
+                    "var pageName = '/'",
+                    StringComparison.OrdinalIgnoreCase) ||
+                LooksLikeLoginFailure(responseBody);
+
+            // Several HG532 builds return HTTP 200 for both success and failure.
+            // Successful login typically sets SessionID_R3.
+            var hasSession =
+                HasAuthenticatedSessionCookie();
+
             var verifyPage =
                 await GetTextAsync(
                     "/",
@@ -223,24 +290,28 @@ public sealed class HuaweiHg532dAdapter :
                     allowFailureStatus: true);
 
             var authenticated =
-                !LooksLikeLoginPage(verifyPage) &&
-                !LooksLikeLoginFailure(responseBody);
+                !explicitFailure &&
+                (
+                    explicitSuccess ||
+                    hasSession ||
+                    !LooksLikeLoginPage(verifyPage)
+                );
 
             if (authenticated)
             {
-                return new ModemLoginResult(
-                    true,
-                    "Huawei HG532d web login succeeded.",
-                    new ModemAuthenticationState(
-                        true,
-                        true,
-                        false,
-                        0,
-                        "Authenticated HG532d web session."));
+                return SuccessfulLogin(
+                    "Huawei HG532d web login succeeded.");
             }
 
+            var mode =
+                UsesChallengeLogin(loginSource)
+                    ? "challenge-response"
+                    : PageUsesHashedPassword(loginSource)
+                        ? "SHA-256/Base64"
+                        : "plain form";
+
             return Failure(
-                "The HG532d did not accept the supplied username/password. This firmware may use different credentials or a different login encoding.");
+                $"The HG532d rejected the login using its detected {mode} method. Verify the actual web-interface credentials. Factory credentials vary by firmware/provider (commonly user/user on Huawei retail documentation and admin/admin on some ISP builds).");
         }
         catch (Exception ex)
         {
@@ -493,6 +564,221 @@ public sealed class HuaweiHg532dAdapter :
             : null;
     }
 
+    private async Task<string> BuildLoginSourceAsync(
+        string rootPage,
+        CancellationToken cancellationToken)
+    {
+        var parts = new List<string>
+        {
+            rootPage
+        };
+
+        try
+        {
+            var indexPage =
+                await GetTextAsync(
+                    "/html/index.asp",
+                    cancellationToken,
+                    allowFailureStatus: true);
+
+            if (!string.IsNullOrWhiteSpace(indexPage))
+                parts.Add(indexPage);
+        }
+        catch
+        {
+            // Optional page on some firmware variants.
+        }
+
+        var combined =
+            string.Join("\n", parts);
+
+        var scripts =
+            Regex.Matches(
+                combined,
+                "<script\\b[^>]*src\\s*=\\s*[\'\"](?<src>[^\'\"]+)[\'\"][^>]*>",
+                RegexOptions.IgnoreCase |
+                RegexOptions.Singleline)
+            .Select(match =>
+                WebUtility.HtmlDecode(
+                    match.Groups["src"].Value))
+            .Where(src =>
+                !string.IsNullOrWhiteSpace(src))
+            .Distinct(
+                StringComparer.OrdinalIgnoreCase)
+            .Take(12)
+            .ToList();
+
+        foreach (var src in scripts)
+        {
+            if (!IsSafeLocalResource(src))
+                continue;
+
+            try
+            {
+                var script =
+                    await GetTextAsync(
+                        NormalizeLocalPath(src),
+                        cancellationToken,
+                        allowFailureStatus: true);
+
+                if (!string.IsNullOrWhiteSpace(script))
+                    parts.Add(script);
+            }
+            catch
+            {
+                // A missing optional script should not abort login detection.
+            }
+        }
+
+        return string.Join("\n", parts);
+    }
+
+    private static bool IsSafeLocalResource(
+        string value)
+    {
+        if (Uri.TryCreate(
+                value,
+                UriKind.Absolute,
+                out _))
+        {
+            return false;
+        }
+
+        return !value.StartsWith(
+            "//",
+            StringComparison.Ordinal);
+    }
+
+    private static string NormalizeLocalPath(
+        string value)
+    {
+        var path =
+            value.Split(
+                '?',
+                2)[0];
+
+        return path.StartsWith(
+            "/",
+            StringComparison.Ordinal)
+                ? path
+                : "/" + path.TrimStart('/');
+    }
+
+    private static bool UsesChallengeLogin(
+        string html) =>
+        html.Contains(
+            "SubmitFormWithChallange",
+            StringComparison.OrdinalIgnoreCase) ||
+        (
+            html.Contains(
+                "challange",
+                StringComparison.OrdinalIgnoreCase) &&
+            html.Contains(
+                "SHA256",
+                StringComparison.OrdinalIgnoreCase)
+        );
+
+    private static string? ExtractChallenge(
+        string html)
+    {
+        string[] patterns =
+        [
+            "\\bchallange\\s*=\\s*[\'\"](?<value>[A-Za-z0-9]{8,128})[\'\"]",
+            "\\bchallenge\\s*=\\s*[\'\"](?<value>[A-Za-z0-9]{8,128})[\'\"]",
+            "name\\s*=\\s*[\'\"]challange[\'\"][^>]*value\\s*=\\s*[\'\"](?<value>[^\'\"]+)[\'\"]",
+            "value\\s*=\\s*[\'\"](?<value>[^\'\"]+)[\'\"][^>]*name\\s*=\\s*[\'\"]challange[\'\"]"
+        ];
+
+        foreach (var pattern in patterns)
+        {
+            var match =
+                Regex.Match(
+                    html,
+                    pattern,
+                    RegexOptions.IgnoreCase |
+                    RegexOptions.Singleline);
+
+            if (match.Success)
+            {
+                var value =
+                    WebUtility.HtmlDecode(
+                        match.Groups["value"].Value)
+                    .Trim();
+
+                if (!string.IsNullOrWhiteSpace(value))
+                    return value;
+            }
+        }
+
+        return null;
+    }
+
+    private bool HasAuthenticatedSessionCookie()
+    {
+        if (_cookies is null ||
+            _baseUri is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return _cookies
+                .GetCookies(_baseUri)
+                .Cast<Cookie>()
+                .Any(cookie =>
+                    cookie.Name.Equals(
+                        "SessionID_R3",
+                        StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(
+                        cookie.Value));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string EncodeChallengeHuaweiPassword(
+        string password,
+        string challenge)
+    {
+        var firstHex =
+            Sha256Hex(password);
+
+        var firstBase64 =
+            Convert.ToBase64String(
+                Encoding.ASCII.GetBytes(
+                    firstHex));
+
+        return Sha256Hex(
+            firstBase64 + challenge);
+    }
+
+    private static string Sha256Hex(
+        string value)
+    {
+        var digest =
+            SHA256.HashData(
+                Encoding.UTF8.GetBytes(
+                    value));
+
+        return Convert.ToHexString(digest)
+            .ToLowerInvariant();
+    }
+
+    private static ModemLoginResult SuccessfulLogin(
+        string message) =>
+        new(
+            true,
+            message,
+            new ModemAuthenticationState(
+                true,
+                true,
+                false,
+                0,
+                "Authenticated HG532d web session."));
+
     private static bool PageUsesHashedPassword(
         string html) =>
         html.Contains(
@@ -511,19 +797,10 @@ public sealed class HuaweiHg532dAdapter :
         );
 
     private static string EncodeLegacyHuaweiPassword(
-        string password)
-    {
-        var digest =
-            SHA256.HashData(
-                Encoding.UTF8.GetBytes(password));
-
-        var hex =
-            Convert.ToHexString(digest)
-                .ToLowerInvariant();
-
-        return Convert.ToBase64String(
-            Encoding.ASCII.GetBytes(hex));
-    }
+        string password) =>
+        Convert.ToBase64String(
+            Encoding.ASCII.GetBytes(
+                Sha256Hex(password)));
 
     private static ModemLoginResult Failure(
         string message) =>
