@@ -27,13 +27,22 @@
 
             <Border Grid.Column="2"
                     x:Name="TitleProfileBadge"
-                    Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                    Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
                     CornerRadius="12"
                     Padding="10,4"
                     VerticalAlignment="Center">
-                <TextBlock x:Name="TitleProfileText"
-                           Text="No modem registered"
-                           FontSize="12" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon x:Name="TitleProfileIcon"
+                              Glyph="&#xE72E;"
+                              FontSize="11"
+                              VerticalAlignment="Center" />
+                    <TextBlock x:Name="TitleProfileText"
+                               Text="No modem registered"
+                               FontSize="12"
+                               VerticalAlignment="Center" />
+                </StackPanel>
             </Border>
         </Grid>
 
@@ -65,7 +74,17 @@
                         <FontIcon Glyph="&#xE9D2;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="SMS" Tag="sms">
+                <NavigationViewItem x:Name="ContactsNavigationItem"
+                                    Content="Contacts"
+                                    Tag="contacts">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE77B;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="SmsNavigationItem"
+                                    Content="SMS"
+                                    Tag="sms"
+                                    IsEnabled="False">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8BD;" />
                     </NavigationViewItem.Icon>
@@ -718,84 +737,79 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <StackPanel Spacing="4">
-                                <TextBlock Text="SMS"
+                                <TextBlock Text="Messages"
                                            FontSize="32"
                                            FontWeight="SemiBold" />
-                                <TextBlock Text="Browse and send messages through the modem's native SMS API."
-                                           Opacity="0.7" />
+                                <TextBlock Text="Conversations are grouped by phone number and matched to the internal phonebook."
+                                           Opacity="0.7"
+                                           TextWrapping="Wrap" />
                             </StackPanel>
-                            <StackPanel Grid.Column="1"
-                                        Orientation="Horizontal"
-                                        Spacing="8"
-                                        VerticalAlignment="Bottom">
-                                <ComboBox x:Name="SmsBoxComboBox"
-                                          Width="120"
-                                          SelectedIndex="0"
-                                          SelectionChanged="SmsBoxComboBox_SelectionChanged">
-                                    <ComboBoxItem Content="Inbox" />
-                                    <ComboBoxItem Content="Sent" />
-                                    <ComboBoxItem Content="Draft" />
-                                </ComboBox>
-                                <Button Content="Refresh"
-                                        Click="RefreshSms_Click" />
-                            </StackPanel>
+                            <Button Grid.Column="1"
+                                    Content="Refresh"
+                                    Click="RefreshSms_Click"
+                                    VerticalAlignment="Bottom" />
                         </Grid>
 
                         <Grid Grid.Row="2" ColumnSpacing="14">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="3*" />
-                                <ColumnDefinition Width="2*" />
+                                <ColumnDefinition Width="330" />
+                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 
                             <Border Style="{StaticResource CardStyle}">
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="10" />
+                                        <RowDefinition Height="8" />
                                         <RowDefinition Height="*" />
-                                        <RowDefinition Height="10" />
-                                        <RowDefinition Height="Auto" />
                                     </Grid.RowDefinitions>
 
                                     <StackPanel>
-                                        <TextBlock Text="Messages"
+                                        <TextBlock Text="Conversations"
                                                    Style="{StaticResource SectionTitleStyle}" />
                                         <TextBlock x:Name="SmsCountsText"
-                                                   Text="Inbox — • Unread — • Sent — • Draft —"
+                                                   Text="Inbox — • Unread — • Sent —"
                                                    Opacity="0.65"
                                                    Margin="0,3,0,0" />
                                     </StackPanel>
 
                                     <ListView Grid.Row="2"
-                                              x:Name="SmsListView"
-                                              SelectionMode="Single">
+                                              x:Name="SmsConversationListView"
+                                              SelectionMode="Single"
+                                              SelectionChanged="SmsConversationListView_SelectionChanged">
                                         <ListView.ItemTemplate>
                                             <DataTemplate>
                                                 <Border Padding="10"
                                                         Margin="0,0,0,6"
                                                         Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
                                                         CornerRadius="8">
-                                                    <Grid ColumnSpacing="10">
+                                                    <Grid ColumnSpacing="8">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="*" />
                                                             <ColumnDefinition Width="Auto" />
                                                         </Grid.ColumnDefinitions>
                                                         <StackPanel Spacing="3">
+                                                            <TextBlock Text="{Binding DisplayName}"
+                                                                       FontWeight="SemiBold"
+                                                                       TextTrimming="CharacterEllipsis" />
                                                             <TextBlock Text="{Binding Phone}"
-                                                                       FontWeight="SemiBold" />
-                                                            <TextBlock Text="{Binding Preview}"
+                                                                       FontSize="11"
+                                                                       Opacity="0.6"
+                                                                       TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding LastMessage}"
+                                                                       MaxLines="2"
                                                                        TextWrapping="Wrap"
-                                                                       MaxLines="3"
-                                                                       Opacity="0.82" />
+                                                                       Opacity="0.8" />
                                                         </StackPanel>
                                                         <StackPanel Grid.Column="1"
                                                                     HorizontalAlignment="Right">
-                                                            <TextBlock Text="{Binding Date}"
-                                                                       FontSize="12"
-                                                                       Opacity="0.65" />
-                                                            <TextBlock Text="{Binding ReadState}"
-                                                                       FontSize="12"
-                                                                       Opacity="0.65"
+                                                            <TextBlock Text="{Binding LastDate}"
+                                                                       FontSize="11"
+                                                                       Opacity="0.6" />
+                                                            <TextBlock Text="{Binding UnreadDisplay}"
+                                                                       FontSize="11"
+                                                                       FontWeight="SemiBold"
+                                                                       Opacity="0.75"
                                                                        HorizontalAlignment="Right" />
                                                         </StackPanel>
                                                     </Grid>
@@ -803,46 +817,245 @@
                                             </DataTemplate>
                                         </ListView.ItemTemplate>
                                     </ListView>
+                                </Grid>
+                            </Border>
 
-                                    <StackPanel Grid.Row="4"
-                                                Orientation="Horizontal"
-                                                Spacing="8"
-                                                HorizontalAlignment="Right">
-                                        <Button Content="Mark read"
-                                                Click="MarkSmsRead_Click" />
-                                        <Button Content="Delete"
-                                                Click="DeleteSms_Click" />
-                                    </StackPanel>
+                            <Grid Grid.Column="1">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="10" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="10" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="10" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <Border Style="{StaticResource CardStyle}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock x:Name="SmsThreadTitleText"
+                                                       Text="Select a conversation"
+                                                       Style="{StaticResource SectionTitleStyle}" />
+                                            <TextBlock x:Name="SmsThreadPhoneText"
+                                                       Text="—"
+                                                       Opacity="0.65"
+                                                       Margin="0,2,0,0" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1"
+                                                x:Name="AddSenderToContactsButton"
+                                                Content="Add to contacts"
+                                                IsEnabled="False"
+                                                Click="AddSenderToContacts_Click"
+                                                VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+
+                                <Border Grid.Row="2"
+                                        Style="{StaticResource CardStyle}">
+                                    <ListView x:Name="SmsThreadListView"
+                                              SelectionMode="Single">
+                                        <ListView.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,3">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="30" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <Border Grid.Column="{Binding BubbleColumn}"
+                                                            Padding="11,8"
+                                                            MaxWidth="520"
+                                                            Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                                                            CornerRadius="12">
+                                                        <StackPanel Spacing="4">
+                                                            <TextBlock Text="{Binding DirectionLabel}"
+                                                                       FontSize="11"
+                                                                       FontWeight="SemiBold"
+                                                                       Opacity="0.65" />
+                                                            <TextBlock Text="{Binding Content}"
+                                                                       TextWrapping="Wrap"
+                                                                       IsTextSelectionEnabled="True" />
+                                                            <TextBlock Text="{Binding Date}"
+                                                                       FontSize="10"
+                                                                       Opacity="0.55"
+                                                                       HorizontalAlignment="Right" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListView.ItemTemplate>
+                                    </ListView>
+                                </Border>
+
+                                <StackPanel Grid.Row="4"
+                                            Orientation="Horizontal"
+                                            HorizontalAlignment="Right"
+                                            Spacing="8">
+                                    <Button Content="Mark selected read"
+                                            Click="MarkSmsRead_Click" />
+                                    <Button Content="Delete selected"
+                                            Click="DeleteSms_Click" />
+                                </StackPanel>
+
+                                <Border Grid.Row="6"
+                                        Style="{StaticResource CardStyle}">
+                                    <Grid ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="240" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <AutoSuggestBox x:Name="SmsRecipientBox"
+                                                        Header="Recipient"
+                                                        PlaceholderText="Contact name or phone number"
+                                                        TextChanged="SmsRecipientBox_TextChanged"
+                                                        SuggestionChosen="SmsRecipientBox_SuggestionChosen" />
+
+                                        <TextBox Grid.Column="1"
+                                                 x:Name="SmsMessageBox"
+                                                 Header="Message"
+                                                 PlaceholderText="Write a message..."
+                                                 AcceptsReturn="True"
+                                                 TextWrapping="Wrap"
+                                                 MinHeight="70" />
+
+                                        <Button Grid.Column="2"
+                                                x:Name="SendSmsButton"
+                                                Content="Send"
+                                                Style="{StaticResource AccentButtonStyle}"
+                                                VerticalAlignment="Bottom"
+                                                Click="SendSms_Click" />
+                                    </Grid>
+                                </Border>
+
+                                <InfoBar Grid.Row="6"
+                                         x:Name="SmsInfoBar"
+                                         IsOpen="False"
+                                         IsClosable="True"
+                                         VerticalAlignment="Top"
+                                         Margin="0,-54,0,0" />
+                            </Grid>
+                        </Grid>
+                    </Grid>
+
+                    <Grid x:Name="ContactsPage"
+                          Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="12" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Contacts"
+                                           FontSize="32"
+                                           FontWeight="SemiBold" />
+                                <TextBlock Text="Internal phonebook used to resolve SMS numbers to contact names."
+                                           Opacity="0.7" />
+                            </StackPanel>
+                            <Button Grid.Column="1"
+                                    Content="New contact"
+                                    Click="NewContact_Click"
+                                    VerticalAlignment="Bottom" />
+                        </Grid>
+
+                        <Grid Grid.Row="2" ColumnSpacing="14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="330" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Style="{StaticResource CardStyle}">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="8" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="Phonebook"
+                                               Style="{StaticResource SectionTitleStyle}" />
+                                    <ListView Grid.Row="2"
+                                              x:Name="ContactsListView"
+                                              SelectionMode="Single"
+                                              SelectionChanged="ContactsListView_SelectionChanged">
+                                        <ListView.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Padding="8" Spacing="2">
+                                                    <TextBlock Text="{Binding DisplayName}"
+                                                               FontWeight="SemiBold" />
+                                                    <TextBlock Text="{Binding Subtitle}"
+                                                               FontSize="11"
+                                                               Opacity="0.65" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ListView.ItemTemplate>
+                                    </ListView>
                                 </Grid>
                             </Border>
 
                             <StackPanel Grid.Column="1" Spacing="14">
                                 <Border Style="{StaticResource CardStyle}">
                                     <StackPanel Spacing="12">
-                                        <TextBlock Text="New message"
+                                        <TextBlock Text="Contact details"
                                                    Style="{StaticResource SectionTitleStyle}" />
+
                                         <StackPanel Spacing="6">
-                                            <TextBlock Text="Phone number" />
-                                            <TextBox x:Name="SmsPhoneBox"
-                                                     PlaceholderText="+33..." />
+                                            <TextBlock Text="Display name" />
+                                            <TextBox x:Name="ContactNameBox"
+                                                     PlaceholderText="Name" />
                                         </StackPanel>
+
+                                        <Grid ColumnSpacing="10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="150" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="6">
+                                                <TextBlock Text="Phone number" />
+                                                <TextBox x:Name="ContactPhoneBox"
+                                                         PlaceholderText="+98..." />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Spacing="6">
+                                                <TextBlock Text="Label" />
+                                                <TextBox x:Name="ContactLabelBox"
+                                                         Text="Mobile"
+                                                         PlaceholderText="Mobile" />
+                                            </StackPanel>
+                                        </Grid>
+
                                         <StackPanel Spacing="6">
-                                            <TextBlock Text="Message" />
-                                            <TextBox x:Name="SmsMessageBox"
-                                                     PlaceholderText="Write a message..."
+                                            <TextBlock Text="Notes" />
+                                            <TextBox x:Name="ContactNotesBox"
                                                      AcceptsReturn="True"
                                                      TextWrapping="Wrap"
-                                                     MinHeight="140" />
+                                                     MinHeight="90" />
                                         </StackPanel>
-                                        <Button x:Name="SendSmsButton"
-                                                Content="Send SMS"
-                                                Style="{StaticResource AccentButtonStyle}"
-                                                HorizontalAlignment="Right"
-                                                Click="SendSms_Click" />
+
+                                        <StackPanel Orientation="Horizontal"
+                                                    HorizontalAlignment="Right"
+                                                    Spacing="8">
+                                            <Button Content="Delete"
+                                                    Click="DeleteContact_Click" />
+                                            <Button Content="Save contact"
+                                                    Style="{StaticResource AccentButtonStyle}"
+                                                    Click="SaveContact_Click" />
+                                        </StackPanel>
                                     </StackPanel>
                                 </Border>
 
-                                <InfoBar x:Name="SmsInfoBar"
+                                <InfoBar x:Name="ContactsInfoBar"
                                          IsOpen="False"
                                          IsClosable="True" />
                             </StackPanel>
