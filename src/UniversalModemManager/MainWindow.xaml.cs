@@ -236,6 +236,7 @@ public sealed partial class MainWindow : Window
             }
 
             _activeAdapter = adapter;
+            ApplyAdapterCapabilities(adapter);
 
             var detected =
                 $"{result.DetectedManufacturer ?? "Unknown vendor"}" +
@@ -296,17 +297,25 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
+            var identity =
+                await adapter.GetIdentityAsync(candidate);
+
             var detectedManufacturer =
+                identity?.Manufacturer ??
                 result.DetectedManufacturer ??
                 (candidate.Manufacturer == "Auto detect"
                     ? "Generic"
                     : candidate.Manufacturer);
 
             var detectedModel =
+                identity?.Model ??
                 result.DetectedModel ??
                 (candidate.Model == "Auto detect"
                     ? "Unknown"
                     : candidate.Model);
+
+            if (IsPlaceholderModel(detectedModel))
+                detectedModel = "Modem";
 
             var fingerprint = BuildFingerprint(
                 detectedManufacturer,
@@ -328,6 +337,7 @@ public sealed partial class MainWindow : Window
             };
 
             _activeAdapter = adapter;
+            ApplyAdapterCapabilities(adapter);
 
             await _profileStore.SaveAsync(_profile);
             ApplyProfileToUi();
