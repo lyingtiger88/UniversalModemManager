@@ -33,3 +33,48 @@ public sealed record ModemLoginResult(
     bool Success,
     string Message,
     ModemAuthenticationState State);
+
+
+public interface IModemNetworkProvider
+{
+    Task<ModemNetworkSnapshot> GetNetworkAsync(
+        ModemCandidate candidate,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IModemWifiProvider
+{
+    Task<ModemWifiSnapshot> GetWifiAsync(
+        ModemCandidate candidate,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IModemSmsProvider
+{
+    Task<SmsCounts> GetSmsCountsAsync(
+        ModemCandidate candidate,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<SmsMessage>> GetSmsMessagesAsync(
+        ModemCandidate candidate,
+        SmsBoxType box,
+        int page = 1,
+        int readCount = 20,
+        CancellationToken cancellationToken = default);
+
+    Task SendSmsAsync(
+        ModemCandidate candidate,
+        string phone,
+        string message,
+        CancellationToken cancellationToken = default);
+
+    Task MarkSmsReadAsync(
+        ModemCandidate candidate,
+        string index,
+        CancellationToken cancellationToken = default);
+
+    Task DeleteSmsAsync(
+        ModemCandidate candidate,
+        string index,
+        CancellationToken cancellationToken = default);
+}
