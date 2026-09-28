@@ -84,8 +84,7 @@ public sealed class GenericHttpAdapter : IModemAdapter
     private static string? DetectBrand(HttpResponseMessage response, string body)
     {
         var server = response.Headers.Server.ToString();
-        var haystack = $"{server}
-{body}";
+        var haystack = $"{server}\n{body}";
 
         if (haystack.Contains("Huawei", StringComparison.OrdinalIgnoreCase))
             return "Huawei";
