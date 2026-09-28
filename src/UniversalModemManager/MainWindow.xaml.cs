@@ -1417,16 +1417,6 @@ public sealed partial class MainWindow : Window
         await RefreshSmsAsync(showSuccess: true);
     }
 
-    private async void SmsBoxComboBox_SelectionChanged(
-        object sender,
-        SelectionChangedEventArgs e)
-    {
-        if (_profile is null && _activeAdapter is null)
-            return;
-
-        await RefreshSmsAsync(showSuccess: false);
-    }
-
     private async Task RefreshSmsAsync(
         bool showSuccess)
     {
@@ -1434,37 +1424,68 @@ public sealed partial class MainWindow : Window
         {
             var context = await ResolveFeatureContextAsync();
 
-            if (context.Adapter is not IModemSmsProvider provider)
+            if (context.Adapter is not IModemSmsProvider provider ||
+                !context.Adapter.Capabilities.HasFlag(ModemCapability.Sms))
             {
                 SetSmsInfo(
                     InfoBarSeverity.Warning,
                     "SMS unavailable",
-                    $"{context.Adapter.DisplayName} does not currently implement the modem SMS API.");
+                    "The active modem does not expose SMS capability.");
                 return;
             }
 
-            var counts = await provider.GetSmsCountsAsync(
-                context.Candidate);
+            var counts =
+                await provider.GetSmsCountsAsync(
+                    context.Candidate);
 
-            var box = GetSelectedSmsBox();
+            var selectedKey =
+                (SmsConversationListView.SelectedItem as SmsConversation)?.Key;
 
-            var messages = await provider.GetSmsMessagesAsync(
+            var inbox = await LoadSmsBoxAsync(
+                provider,
                 context.Candidate,
-                box,
-                page: 1,
-                readCount: 20);
+                SmsBoxType.Inbox,
+                counts.LocalInbox);
+
+            var sent = await LoadSmsBoxAsync(
+                provider,
+                context.Candidate,
+                SmsBoxType.Sent,
+                counts.LocalOutbox);
+
+            _smsConversations =
+                BuildSmsConversations(inbox, sent);
 
             SmsCountsText.Text =
-                $"Inbox {counts.LocalInbox} • Unread {counts.LocalUnread} • Sent {counts.LocalOutbox} • Draft {counts.LocalDraft}";
+                $"Inbox {counts.LocalInbox} • Unread {counts.LocalUnread} • Sent {counts.LocalOutbox}";
 
-            SmsListView.ItemsSource = messages;
+            SmsConversationListView.ItemsSource = null;
+            SmsConversationListView.ItemsSource = _smsConversations;
+
+            SmsConversation? selected = null;
+
+            if (!string.IsNullOrWhiteSpace(selectedKey))
+            {
+                selected =
+                    _smsConversations.FirstOrDefault(x =>
+                        x.Key.Equals(
+                            selectedKey,
+                            StringComparison.OrdinalIgnoreCase));
+            }
+
+            selected ??= _smsConversations.FirstOrDefault();
+
+            if (selected is not null)
+                SmsConversationListView.SelectedItem = selected;
+            else
+                ShowSmsConversation(null);
 
             if (showSuccess)
             {
                 SetSmsInfo(
                     InfoBarSeverity.Success,
-                    "SMS refreshed",
-                    $"{messages.Count} message(s) loaded from {box}.");
+                    "Messages refreshed",
+                    $"{_smsConversations.Count} conversation(s) built from the modem inbox and sent messages.");
             }
             else
             {
@@ -1480,6 +1501,303 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private async Task<List<SmsMessage>> LoadSmsBoxAsync(
+        IModemSmsProvider provider,
+        ModemCandidate candidate,
+        SmsBoxType box,
+        int reportedCount)
+    {
+        const int pageSize = 20;
+        const int maxMessages = 300;
+
+        var target =
+            reportedCount <= 0
+                ? pageSize
+                : Math.Min(reportedCount, maxMessages);
+
+        var result = new List<SmsMessage>();
+
+        for (var page = 1;
+             result.Count < target;
+             page++)
+        {
+            var pageItems =
+                await provider.GetSmsMessagesAsync(
+                    candidate,
+                    box,
+                    page,
+                    pageSize);
+
+            if (pageItems.Count == 0)
+                break;
+
+            result.AddRange(pageItems);
+
+            if (pageItems.Count < pageSize)
+                break;
+        }
+
+        return result;
+    }
+
+    private List<SmsConversation> BuildSmsConversations(
+        IReadOnlyList<SmsMessage> inbox,
+        IReadOnlyList<SmsMessage> sent)
+    {
+        var messages = new List<SmsThreadMessage>();
+
+        messages.AddRange(
+            inbox.Select(message =>
+                new SmsThreadMessage
+                {
+                    Index = message.Index,
+                    Phone = message.Phone,
+                    Content = message.Content,
+                    Date = message.Date,
+                    IsIncoming = true,
+                    IsRead = message.IsRead
+                }));
+
+        messages.AddRange(
+            sent.Select(message =>
+                new SmsThreadMessage
+                {
+                    Index = message.Index,
+                    Phone = message.Phone,
+                    Content = message.Content,
+                    Date = message.Date,
+                    IsIncoming = false,
+                    IsRead = true
+                }));
+
+        var conversations =
+            messages
+                .GroupBy(message =>
+                {
+                    var normalized =
+                        ContactStore.NormalizePhone(
+                            message.Phone);
+
+                    return string.IsNullOrWhiteSpace(normalized)
+                        ? message.Phone
+                        : normalized;
+                },
+                StringComparer.OrdinalIgnoreCase)
+                .Select(group =>
+                {
+                    var ordered =
+                        group
+                            .OrderBy(message =>
+                                ParseSmsDate(message.Date))
+                            .ToList();
+
+                    var latest = ordered[^1];
+                    var phone = latest.Phone;
+                    var contact =
+                        ContactStore.FindByNumber(
+                            _contacts,
+                            phone);
+
+                    var conversation =
+                        new SmsConversation
+                        {
+                            Key = group.Key,
+                            Phone = phone,
+                            DisplayName =
+                                contact?.DisplayName ??
+                                phone,
+                            LastMessage =
+                                ShortenMessage(
+                                    latest.Content),
+                            LastDate = latest.Date,
+                            UnreadCount =
+                                ordered.Count(message =>
+                                    message.IsIncoming &&
+                                    !message.IsRead)
+                        };
+
+                    conversation.Messages.AddRange(ordered);
+                    return conversation;
+                })
+                .OrderByDescending(conversation =>
+                    ParseSmsDate(
+                        conversation.LastDate))
+                .ToList();
+
+        return conversations;
+    }
+
+    private static string ShortenMessage(
+        string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var oneLine =
+            value.Replace("\r", " ")
+                 .Replace("\n", " ")
+                 .Trim();
+
+        return oneLine.Length <= 90
+            ? oneLine
+            : oneLine[..87] + "...";
+    }
+
+    private static DateTime ParseSmsDate(
+        string? value) =>
+        DateTime.TryParse(
+            value,
+            out var result)
+                ? result
+                : DateTime.MinValue;
+
+    private void SmsConversationListView_SelectionChanged(
+        object sender,
+        SelectionChangedEventArgs e)
+    {
+        ShowSmsConversation(
+            SmsConversationListView.SelectedItem
+                as SmsConversation);
+    }
+
+    private void ShowSmsConversation(
+        SmsConversation? conversation)
+    {
+        if (conversation is null)
+        {
+            SmsThreadTitleText.Text =
+                "Select a conversation";
+            SmsThreadPhoneText.Text = "—";
+            SmsThreadListView.ItemsSource = null;
+            AddSenderToContactsButton.IsEnabled = false;
+            _selectedSmsRecipientNumber = null;
+            return;
+        }
+
+        SmsThreadTitleText.Text =
+            conversation.DisplayName;
+        SmsThreadPhoneText.Text =
+            conversation.Phone;
+
+        SmsThreadListView.ItemsSource =
+            conversation.Messages;
+
+        var contact =
+            ContactStore.FindByNumber(
+                _contacts,
+                conversation.Phone);
+
+        AddSenderToContactsButton.IsEnabled =
+            contact is null;
+
+        _selectedSmsRecipientNumber =
+            conversation.Phone;
+
+        SmsRecipientBox.Text =
+            contact?.DisplayName ??
+            conversation.Phone;
+    }
+
+    private void SmsRecipientBox_TextChanged(
+        AutoSuggestBox sender,
+        AutoSuggestBoxTextChangedEventArgs args)
+    {
+        if (args.Reason !=
+            AutoSuggestionBoxTextChangeReason.UserInput)
+        {
+            return;
+        }
+
+        _selectedSmsRecipientNumber = null;
+
+        var query =
+            sender.Text.Trim();
+
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            sender.ItemsSource = null;
+            return;
+        }
+
+        sender.ItemsSource =
+            _contacts
+                .Where(contact =>
+                    contact.DisplayName.Contains(
+                        query,
+                        StringComparison.CurrentCultureIgnoreCase) ||
+                    contact.Numbers.Any(number =>
+                        number.Number.Contains(
+                            query,
+                            StringComparison.OrdinalIgnoreCase)))
+                .Take(8)
+                .Select(ContactSuggestionText)
+                .ToList();
+    }
+
+    private void SmsRecipientBox_SuggestionChosen(
+        AutoSuggestBox sender,
+        AutoSuggestBoxSuggestionChosenEventArgs args)
+    {
+        var selected =
+            args.SelectedItem?.ToString();
+
+        if (string.IsNullOrWhiteSpace(selected))
+            return;
+
+        var contact =
+            _contacts.FirstOrDefault(item =>
+                ContactSuggestionText(item)
+                    .Equals(
+                        selected,
+                        StringComparison.Ordinal));
+
+        if (contact is null)
+            return;
+
+        _selectedSmsRecipientNumber =
+            contact.PrimaryNumber;
+
+        sender.Text =
+            contact.DisplayName;
+    }
+
+    private static string ContactSuggestionText(
+        Contact contact) =>
+        $"{contact.DisplayName} — {contact.PrimaryNumber}";
+
+    private string ResolveRecipientNumber(
+        string text)
+    {
+        if (!string.IsNullOrWhiteSpace(
+                _selectedSmsRecipientNumber))
+        {
+            return _selectedSmsRecipientNumber;
+        }
+
+        var trimmed = text.Trim();
+
+        var contactByName =
+            _contacts.FirstOrDefault(contact =>
+                contact.DisplayName.Equals(
+                    trimmed,
+                    StringComparison.CurrentCultureIgnoreCase));
+
+        if (contactByName is not null &&
+            !string.IsNullOrWhiteSpace(
+                contactByName.PrimaryNumber))
+        {
+            return contactByName.PrimaryNumber;
+        }
+
+        var contactByNumber =
+            ContactStore.FindByNumber(
+                _contacts,
+                trimmed);
+
+        return contactByNumber?.PrimaryNumber ??
+               trimmed;
+    }
+
     private async void SendSms_Click(
         object sender,
         RoutedEventArgs e)
@@ -1488,30 +1806,50 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            var context = await ResolveFeatureContextAsync();
+            var context =
+                await ResolveFeatureContextAsync();
 
-            if (context.Adapter is not IModemSmsProvider provider)
+            if (context.Adapter is not IModemSmsProvider provider ||
+                !context.Adapter.Capabilities.HasFlag(ModemCapability.Sms))
             {
                 SetSmsInfo(
                     InfoBarSeverity.Warning,
                     "SMS unavailable",
-                    $"{context.Adapter.DisplayName} does not support SMS sending.");
+                    "The active modem does not support SMS sending.");
+                return;
+            }
+
+            var recipient =
+                ResolveRecipientNumber(
+                    SmsRecipientBox.Text);
+
+            if (string.IsNullOrWhiteSpace(recipient))
+            {
+                SetSmsInfo(
+                    InfoBarSeverity.Warning,
+                    "Recipient required",
+                    "Choose a contact or enter a phone number.");
                 return;
             }
 
             await provider.SendSmsAsync(
                 context.Candidate,
-                SmsPhoneBox.Text,
+                recipient,
                 SmsMessageBox.Text);
 
-            SmsMessageBox.Text = string.Empty;
+            SmsMessageBox.Text =
+                string.Empty;
+
+            _selectedSmsRecipientNumber =
+                recipient;
 
             SetSmsInfo(
                 InfoBarSeverity.Success,
                 "SMS submitted",
                 "The modem accepted the message for sending.");
 
-            await RefreshSmsAsync(showSuccess: false);
+            await RefreshSmsAsync(
+                showSuccess: false);
         }
         catch (Exception ex)
         {
@@ -1530,18 +1868,32 @@ public sealed partial class MainWindow : Window
         object sender,
         RoutedEventArgs e)
     {
-        if (SmsListView.SelectedItem is not SmsMessage message)
+        if (SmsThreadListView.SelectedItem
+            is not SmsThreadMessage message)
         {
             SetSmsInfo(
                 InfoBarSeverity.Informational,
                 "Select a message",
-                "Choose an SMS from the list first.");
+                "Choose a message bubble first.");
+            return;
+        }
+
+        if (!message.IsIncoming ||
+            message.IsRead)
+        {
+            SetSmsInfo(
+                InfoBarSeverity.Informational,
+                "No change required",
+                message.IsIncoming
+                    ? "This message is already marked as read."
+                    : "Sent messages do not need a read-state update.");
             return;
         }
 
         try
         {
-            var context = await ResolveFeatureContextAsync();
+            var context =
+                await ResolveFeatureContextAsync();
 
             if (context.Adapter is not IModemSmsProvider provider)
                 return;
@@ -1550,7 +1902,8 @@ public sealed partial class MainWindow : Window
                 context.Candidate,
                 message.Index);
 
-            await RefreshSmsAsync(showSuccess: false);
+            await RefreshSmsAsync(
+                showSuccess: false);
 
             SetSmsInfo(
                 InfoBarSeverity.Success,
@@ -1570,18 +1923,20 @@ public sealed partial class MainWindow : Window
         object sender,
         RoutedEventArgs e)
     {
-        if (SmsListView.SelectedItem is not SmsMessage message)
+        if (SmsThreadListView.SelectedItem
+            is not SmsThreadMessage message)
         {
             SetSmsInfo(
                 InfoBarSeverity.Informational,
                 "Select a message",
-                "Choose an SMS from the list first.");
+                "Choose a message bubble first.");
             return;
         }
 
         try
         {
-            var context = await ResolveFeatureContextAsync();
+            var context =
+                await ResolveFeatureContextAsync();
 
             if (context.Adapter is not IModemSmsProvider provider)
                 return;
@@ -1590,7 +1945,8 @@ public sealed partial class MainWindow : Window
                 context.Candidate,
                 message.Index);
 
-            await RefreshSmsAsync(showSuccess: false);
+            await RefreshSmsAsync(
+                showSuccess: false);
 
             SetSmsInfo(
                 InfoBarSeverity.Success,
@@ -1606,19 +1962,272 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private SmsBoxType GetSelectedSmsBox()
+    private void AddSenderToContacts_Click(
+        object sender,
+        RoutedEventArgs e)
     {
-        var content =
-            (SmsBoxComboBox.SelectedItem as ComboBoxItem)
-            ?.Content
-            ?.ToString();
-
-        return content switch
+        if (SmsConversationListView.SelectedItem
+            is not SmsConversation conversation)
         {
-            "Sent" => SmsBoxType.Sent,
-            "Draft" => SmsBoxType.Draft,
-            _ => SmsBoxType.Inbox
-        };
+            return;
+        }
+
+        _editingContactId = null;
+        ContactsListView.SelectedItem = null;
+        ContactNameBox.Text =
+            conversation.DisplayName.Equals(
+                conversation.Phone,
+                StringComparison.OrdinalIgnoreCase)
+                    ? string.Empty
+                    : conversation.DisplayName;
+
+        ContactPhoneBox.Text =
+            conversation.Phone;
+        ContactLabelBox.Text =
+            "Mobile";
+        ContactNotesBox.Text =
+            string.Empty;
+
+        RootNavigation.SelectedItem =
+            ContactsNavigationItem;
+        ShowPage(ContactsPage);
+    }
+
+    private void NewContact_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        ClearContactEditor();
+    }
+
+    private void ContactsListView_SelectionChanged(
+        object sender,
+        SelectionChangedEventArgs e)
+    {
+        if (ContactsListView.SelectedItem
+            is not Contact contact)
+        {
+            return;
+        }
+
+        _editingContactId =
+            contact.Id;
+
+        ContactNameBox.Text =
+            contact.DisplayName;
+        ContactPhoneBox.Text =
+            contact.PrimaryNumber;
+        ContactLabelBox.Text =
+            contact.Numbers.FirstOrDefault()?.Label ??
+            "Mobile";
+        ContactNotesBox.Text =
+            contact.Notes;
+    }
+
+    private async void SaveContact_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var name =
+            ContactNameBox.Text.Trim();
+
+        var phone =
+            ContactPhoneBox.Text.Trim();
+
+        if (string.IsNullOrWhiteSpace(name) ||
+            string.IsNullOrWhiteSpace(phone))
+        {
+            SetContactsInfo(
+                InfoBarSeverity.Warning,
+                "Name and phone are required",
+                "Enter a display name and at least one phone number.");
+            return;
+        }
+
+        var normalized =
+            ContactStore.NormalizePhone(phone);
+
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            SetContactsInfo(
+                InfoBarSeverity.Warning,
+                "Invalid phone number",
+                "Enter a phone number containing digits.");
+            return;
+        }
+
+        var duplicate =
+            _contacts.FirstOrDefault(contact =>
+                contact.Id != _editingContactId &&
+                ContactStore.FindByNumber(
+                    new[] { contact },
+                    phone) is not null);
+
+        if (duplicate is not null)
+        {
+            SetContactsInfo(
+                InfoBarSeverity.Warning,
+                "Phone number already exists",
+                $"This number is already assigned to {duplicate.DisplayName}.");
+            return;
+        }
+
+        Contact contact;
+
+        if (_editingContactId is not null)
+        {
+            contact =
+                _contacts.FirstOrDefault(x =>
+                    x.Id == _editingContactId.Value)
+                ?? new Contact
+                {
+                    Id = _editingContactId.Value
+                };
+
+            if (!_contacts.Contains(contact))
+                _contacts.Add(contact);
+        }
+        else
+        {
+            contact = new Contact();
+            _contacts.Add(contact);
+        }
+
+        contact.DisplayName = name;
+        contact.Notes =
+            ContactNotesBox.Text.Trim();
+        contact.Numbers =
+        [
+            new ContactNumber
+            {
+                Label =
+                    string.IsNullOrWhiteSpace(
+                        ContactLabelBox.Text)
+                        ? "Mobile"
+                        : ContactLabelBox.Text.Trim(),
+                Number = phone,
+                NormalizedNumber = normalized
+            }
+        ];
+
+        await _contactStore.SaveAsync(_contacts);
+        _contacts =
+            await _contactStore.LoadAsync();
+
+        _editingContactId =
+            contact.Id;
+
+        RefreshContactsList();
+        RefreshConversationContactNames();
+
+        ContactsListView.SelectedItem =
+            _contacts.FirstOrDefault(x =>
+                x.Id == contact.Id);
+
+        SetContactsInfo(
+            InfoBarSeverity.Success,
+            "Contact saved",
+            $"{name} is now available in the internal phonebook.");
+    }
+
+    private async void DeleteContact_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (_editingContactId is null)
+        {
+            SetContactsInfo(
+                InfoBarSeverity.Informational,
+                "Select a contact",
+                "Choose a contact from the phonebook first.");
+            return;
+        }
+
+        var contact =
+            _contacts.FirstOrDefault(x =>
+                x.Id == _editingContactId.Value);
+
+        if (contact is null)
+            return;
+
+        _contacts.Remove(contact);
+        await _contactStore.SaveAsync(_contacts);
+
+        _editingContactId = null;
+
+        RefreshContactsList();
+        ClearContactEditor();
+        RefreshConversationContactNames();
+
+        SetContactsInfo(
+            InfoBarSeverity.Success,
+            "Contact deleted",
+            "The contact was removed from the internal phonebook. SMS messages remain on the modem.");
+    }
+
+    private void ClearContactEditor()
+    {
+        _editingContactId = null;
+        ContactsListView.SelectedItem = null;
+        ContactNameBox.Text = string.Empty;
+        ContactPhoneBox.Text = string.Empty;
+        ContactLabelBox.Text = "Mobile";
+        ContactNotesBox.Text = string.Empty;
+    }
+
+    private void RefreshContactsList()
+    {
+        ContactsListView.ItemsSource = null;
+        ContactsListView.ItemsSource =
+            _contacts
+                .OrderBy(
+                    x => x.DisplayName,
+                    StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+    }
+
+    private void RefreshConversationContactNames()
+    {
+        foreach (var conversation
+                 in _smsConversations)
+        {
+            var contact =
+                ContactStore.FindByNumber(
+                    _contacts,
+                    conversation.Phone);
+
+            conversation.DisplayName =
+                contact?.DisplayName ??
+                conversation.Phone;
+        }
+
+        var selectedKey =
+            (SmsConversationListView.SelectedItem
+                as SmsConversation)?.Key;
+
+        SmsConversationListView.ItemsSource = null;
+        SmsConversationListView.ItemsSource =
+            _smsConversations;
+
+        if (!string.IsNullOrWhiteSpace(selectedKey))
+        {
+            SmsConversationListView.SelectedItem =
+                _smsConversations.FirstOrDefault(x =>
+                    x.Key.Equals(
+                        selectedKey,
+                        StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private void SetContactsInfo(
+        InfoBarSeverity severity,
+        string title,
+        string message)
+    {
+        ContactsInfoBar.Severity = severity;
+        ContactsInfoBar.Title = title;
+        ContactsInfoBar.Message = message;
+        ContactsInfoBar.IsOpen = true;
     }
 
     private void SetSmsInfo(
@@ -1642,7 +2251,7 @@ public sealed partial class MainWindow : Window
                 "login is required",
                 StringComparison.OrdinalIgnoreCase))
         {
-            return "Admin login is required for SMS on this modem. Open Modem profile, log in, then return to SMS.";
+            return "Admin login is required for SMS on this modem. Open Modem profile, log in, then return to Messages.";
         }
 
         return ex.Message;
