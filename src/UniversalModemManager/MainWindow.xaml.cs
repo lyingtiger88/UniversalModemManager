@@ -116,6 +116,54 @@ public sealed partial class MainWindow : Window
                 : ["Auto detect", "Other / Unknown"];
 
         ModelComboBox.SelectedIndex = 0;
+
+        // Changing the modem family invalidates a previously selected
+        // vendor-specific adapter. Let detection choose again.
+        if (AdapterComboBox is not null &&
+            AdapterComboBox.Items.Count > 0 &&
+            BrandComboBox.IsEnabled)
+        {
+            SelectComboValue(
+                AdapterComboBox,
+                "Auto detect");
+        }
+    }
+
+    private void ModelComboBox_SelectionChanged(
+        object sender,
+        SelectionChangedEventArgs e)
+    {
+        if (AdapterComboBox is null ||
+            AdapterComboBox.Items.Count == 0 ||
+            !ModelComboBox.IsEnabled)
+        {
+            return;
+        }
+
+        var model =
+            ModelComboBox.SelectedItem?.ToString();
+
+        if (string.IsNullOrWhiteSpace(model))
+            return;
+
+        if (IsDslOnlyModel(model))
+        {
+            SelectComboValue(
+                AdapterComboBox,
+                "Generic HTTP/DSL router");
+
+            SetProbeState(
+                InfoBarSeverity.Informational,
+                "DSL adapter selected",
+                $"{model} is not a Huawei HiLink modem. The compatible Generic HTTP/DSL adapter was selected automatically.");
+            return;
+        }
+
+        // For all other model changes, return to automatic detection instead
+        // of silently reusing an adapter from the previously registered modem.
+        SelectComboValue(
+            AdapterComboBox,
+            "Auto detect");
     }
 
     private async void RootNavigation_SelectionChanged(
@@ -2326,6 +2374,20 @@ public sealed partial class MainWindow : Window
         var selected =
             AdapterComboBox.SelectedItem?.ToString() ?? "Auto detect";
 
+        // Safety net: DSL-only models must never be sent to Huawei HiLink.
+        // Older profile state can leave a previous adapter selected even after
+        // the user changes the modem model.
+        if (IsDslOnlyModel(candidate.Model) &&
+            selected.Equals(
+                "Huawei HiLink",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            selected = "Generic HTTP/DSL router";
+            SelectComboValue(
+                AdapterComboBox,
+                selected);
+        }
+
         if (selected.Equals(
                 "Auto detect",
                 StringComparison.OrdinalIgnoreCase))
@@ -2622,6 +2684,23 @@ public sealed partial class MainWindow : Window
             smsAvailable
                 ? "SMS is supported by the active modem adapter."
                 : "SMS is unavailable for this modem. Non-cellular/ADSL/VDSL/router profiles keep this section disabled.");
+    }
+
+    private static bool IsDslOnlyModel(
+        string? model)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+            return false;
+
+        return model.Equals(
+                   "HG532d",
+                   StringComparison.OrdinalIgnoreCase) ||
+               model.Contains(
+                   "ADSL",
+                   StringComparison.OrdinalIgnoreCase) ||
+               model.Contains(
+                   "VDSL",
+                   StringComparison.OrdinalIgnoreCase);
     }
 
     private static string ProfileIdentityLabel(
