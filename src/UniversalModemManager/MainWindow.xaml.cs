@@ -162,7 +162,15 @@ public sealed partial class MainWindow : Window
                 await RefreshTrafficAsync(showSuccess: false);
                 break;
 
+            case "contacts":
+                ShowPage(ContactsPage);
+                RefreshContactsList();
+                break;
+
             case "sms":
+                if (!SmsNavigationItem.IsEnabled)
+                    return;
+
                 ShowPage(SmsPage);
                 await RefreshSmsAsync(showSuccess: false);
                 break;
@@ -182,6 +190,7 @@ public sealed partial class MainWindow : Window
         ClientsPage.Visibility = Visibility.Collapsed;
         TrafficPage.Visibility = Visibility.Collapsed;
         SmsPage.Visibility = Visibility.Collapsed;
+        ContactsPage.Visibility = Visibility.Collapsed;
         DiagnosticsPage.Visibility = Visibility.Collapsed;
         PlaceholderPage.Visibility = Visibility.Collapsed;
         target.Visibility = Visibility.Visible;
