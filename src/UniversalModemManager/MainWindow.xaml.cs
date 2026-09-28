@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Net.NetworkInformation;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.UI.Xaml;
@@ -142,15 +144,13 @@ public sealed partial class MainWindow : Window
                 break;
 
             case "clients":
-                ShowPlaceholder(
-                    "Connected devices",
-                    "Per-client IP, MAC, connection time, traffic counters, disconnect, blacklist and local aliases will appear here.");
+                ShowPage(ClientsPage);
+                await RefreshClientsAsync(showSuccess: false);
                 break;
 
             case "traffic":
-                ShowPlaceholder(
-                    "Traffic",
-                    "Session, daily, monthly, quarterly and yearly traffic history will be stored independently of the modem's limited counters.");
+                ShowPage(TrafficPage);
+                await RefreshTrafficAsync(showSuccess: false);
                 break;
 
             case "sms":
@@ -159,9 +159,7 @@ public sealed partial class MainWindow : Window
                 break;
 
             case "diagnostics":
-                ShowPlaceholder(
-                    "Diagnostics",
-                    "Unknown modems will be able to produce a safe diagnostic package that excludes passwords, session cookies and message content.");
+                ShowPage(DiagnosticsPage);
                 break;
         }
     }
@@ -172,7 +170,10 @@ public sealed partial class MainWindow : Window
         ModemPage.Visibility = Visibility.Collapsed;
         NetworkPage.Visibility = Visibility.Collapsed;
         WifiPage.Visibility = Visibility.Collapsed;
+        ClientsPage.Visibility = Visibility.Collapsed;
+        TrafficPage.Visibility = Visibility.Collapsed;
         SmsPage.Visibility = Visibility.Collapsed;
+        DiagnosticsPage.Visibility = Visibility.Collapsed;
         PlaceholderPage.Visibility = Visibility.Collapsed;
         target.Visibility = Visibility.Visible;
     }
@@ -820,6 +821,23 @@ public sealed partial class MainWindow : Window
             WifiIsolationText.Text =
                 data.IsolationDisplay;
 
+            WifiSsidEditBox.Text = data.Ssid ?? string.Empty;
+            WifiChannelEditBox.Text = data.Channel ?? string.Empty;
+
+            if (data.Enabled is not null)
+                WifiEnabledSwitch.IsOn = data.Enabled.Value;
+
+            if (data.Hidden is not null)
+                WifiHiddenSwitch.IsOn = data.Hidden.Value;
+
+            if (data.ClientIsolation is not null)
+                WifiIsolationSwitch.IsOn = data.ClientIsolation.Value;
+
+            WifiMaxClientsNumberBox.Value =
+                data.MaxClients is null
+                    ? double.NaN
+                    : data.MaxClients.Value;
+
             if (showSuccess)
             {
                 SetWifiInfo(
@@ -841,6 +859,63 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private async void ApplyWifiSettings_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        ApplyWifiSettingsButton.IsEnabled = false;
+
+        try
+        {
+            var context = await ResolveFeatureContextAsync();
+
+            if (context.Adapter is not IModemWifiProvider provider)
+            {
+                SetWifiInfo(
+                    InfoBarSeverity.Warning,
+                    "Wi-Fi changes unavailable",
+                    $"{context.Adapter.DisplayName} does not implement Wi-Fi configuration changes.");
+                return;
+            }
+
+            int? maxClients = null;
+            if (!double.IsNaN(WifiMaxClientsNumberBox.Value))
+                maxClients = (int)Math.Round(WifiMaxClientsNumberBox.Value);
+
+            var request = new WifiUpdateRequest(
+                Ssid: WifiSsidEditBox.Text,
+                Enabled: WifiEnabledSwitch.IsOn,
+                Hidden: WifiHiddenSwitch.IsOn,
+                Channel: string.IsNullOrWhiteSpace(WifiChannelEditBox.Text)
+                    ? null
+                    : WifiChannelEditBox.Text.Trim(),
+                MaxClients: maxClients,
+                ClientIsolation: WifiIsolationSwitch.IsOn);
+
+            await provider.UpdateWifiAsync(
+                context.Candidate,
+                request);
+
+            SetWifiInfo(
+                InfoBarSeverity.Success,
+                "Wi-Fi settings applied",
+                "The modem accepted the new settings. If SSID, channel or radio state changed, your current Wi-Fi connection may reconnect.");
+
+            await RefreshWifiAsync(showSuccess: false);
+        }
+        catch (Exception ex)
+        {
+            SetWifiInfo(
+                InfoBarSeverity.Error,
+                "Could not change Wi-Fi settings",
+                ex.Message);
+        }
+        finally
+        {
+            ApplyWifiSettingsButton.IsEnabled = true;
+        }
+    }
+
     private void SetWifiInfo(
         InfoBarSeverity severity,
         string title,
@@ -850,6 +925,461 @@ public sealed partial class MainWindow : Window
         WifiInfoBar.Title = title;
         WifiInfoBar.Message = message;
         WifiInfoBar.IsOpen = true;
+    }
+
+    private async void RefreshClients_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        await RefreshClientsAsync(showSuccess: true);
+    }
+
+    private async Task RefreshClientsAsync(
+        bool showSuccess)
+    {
+        try
+        {
+            var context = await ResolveFeatureContextAsync();
+
+            if (context.Adapter is not IModemConnectedDevicesProvider provider)
+            {
+                SetClientsInfo(
+                    InfoBarSeverity.Warning,
+                    "Client list unavailable",
+                    $"{context.Adapter.DisplayName} does not implement connected-device discovery.");
+                return;
+            }
+
+            var clients =
+                await provider.GetConnectedDevicesAsync(
+                    context.Candidate);
+
+            ClientsListView.ItemsSource = clients;
+            ClientsCountText.Text =
+                $"{clients.Count} device{(clients.Count == 1 ? string.Empty : "s")}";
+
+            var hasPerClientTraffic =
+                clients.Any(x => x.HasTrafficCounters);
+
+            if (showSuccess)
+            {
+                SetClientsInfo(
+                    InfoBarSeverity.Success,
+                    "Connected devices refreshed",
+                    hasPerClientTraffic
+                        ? $"{clients.Count} connected device(s) loaded, including per-device traffic counters where reported."
+                        : $"{clients.Count} connected device(s) loaded. This firmware does not expose per-device byte counters, so traffic fields remain N/A.");
+            }
+            else
+            {
+                ClientsInfoBar.IsOpen = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            SetClientsInfo(
+                InfoBarSeverity.Error,
+                "Could not read connected devices",
+                ex.Message);
+        }
+    }
+
+    private void SetClientsInfo(
+        InfoBarSeverity severity,
+        string title,
+        string message)
+    {
+        ClientsInfoBar.Severity = severity;
+        ClientsInfoBar.Title = title;
+        ClientsInfoBar.Message = message;
+        ClientsInfoBar.IsOpen = true;
+    }
+
+    private async void RefreshTraffic_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        await RefreshTrafficAsync(showSuccess: true);
+    }
+
+    private async Task RefreshTrafficAsync(
+        bool showSuccess)
+    {
+        try
+        {
+            var context = await ResolveFeatureContextAsync();
+
+            if (context.Adapter is not IModemTrafficProvider provider)
+            {
+                SetTrafficInfo(
+                    InfoBarSeverity.Warning,
+                    "Traffic data unavailable",
+                    $"{context.Adapter.DisplayName} does not implement modem traffic counters.");
+                return;
+            }
+
+            var traffic =
+                await provider.GetTrafficAsync(
+                    context.Candidate);
+
+            var month =
+                await provider.GetMonthTrafficAsync(
+                    context.Candidate);
+
+            TrafficSessionTimeText.Text =
+                TrafficFormat.Duration(
+                    traffic.CurrentConnectTimeSeconds);
+
+            TrafficSessionUploadText.Text =
+                $"Upload {TrafficFormat.Bytes(traffic.CurrentUploadBytes)}";
+
+            TrafficSessionDownloadText.Text =
+                $"Download {TrafficFormat.Bytes(traffic.CurrentDownloadBytes)}";
+
+            TrafficSessionTotalText.Text =
+                $"Total {TrafficFormat.Bytes(traffic.CurrentTotalBytes)}";
+
+            TrafficUploadRateText.Text =
+                TrafficFormat.Rate(
+                    traffic.CurrentUploadRateBytesPerSecond);
+
+            TrafficDownloadRateText.Text =
+                TrafficFormat.Rate(
+                    traffic.CurrentDownloadRateBytesPerSecond);
+
+            TrafficMonthTimeText.Text =
+                TrafficFormat.Duration(
+                    month.DurationSeconds);
+
+            TrafficMonthUploadText.Text =
+                $"Upload {TrafficFormat.Bytes(month.UploadBytes)}";
+
+            TrafficMonthDownloadText.Text =
+                $"Download {TrafficFormat.Bytes(month.DownloadBytes)}";
+
+            TrafficMonthTotalText.Text =
+                $"Total {TrafficFormat.Bytes(month.TotalBytes)}";
+
+            TrafficTotalTimeText.Text =
+                TrafficFormat.Duration(
+                    traffic.TotalConnectTimeSeconds);
+
+            TrafficTotalUploadText.Text =
+                TrafficFormat.Bytes(
+                    traffic.TotalUploadBytes);
+
+            TrafficTotalDownloadText.Text =
+                TrafficFormat.Bytes(
+                    traffic.TotalDownloadBytes);
+
+            TrafficGrandTotalText.Text =
+                TrafficFormat.Bytes(
+                    traffic.TotalBytes);
+
+            if (showSuccess)
+            {
+                SetTrafficInfo(
+                    InfoBarSeverity.Success,
+                    "Traffic refreshed",
+                    "Session, monthly and lifetime modem counters were updated.");
+            }
+            else
+            {
+                TrafficInfoBar.IsOpen = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            SetTrafficInfo(
+                InfoBarSeverity.Error,
+                "Could not read traffic data",
+                ex.Message);
+        }
+    }
+
+    private void SetTrafficInfo(
+        InfoBarSeverity severity,
+        string title,
+        string message)
+    {
+        TrafficInfoBar.Severity = severity;
+        TrafficInfoBar.Title = title;
+        TrafficInfoBar.Message = message;
+        TrafficInfoBar.IsOpen = true;
+    }
+
+    private async void RunDiagnostics_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        RunDiagnosticsButton.IsEnabled = false;
+        DiagnosticsInfoBar.IsOpen = false;
+
+        var results = new List<DiagnosticItem>();
+
+        try
+        {
+            var context = await ResolveFeatureContextAsync();
+            var gatewayHost = context.Candidate.Gateway.Host;
+
+            results.Add(new DiagnosticItem(
+                "Profile",
+                "PASS",
+                $"{context.Candidate.Manufacturer} {context.Candidate.Model} • {context.Candidate.Gateway} • {context.Adapter.DisplayName}"));
+
+            var pingWatch = Stopwatch.StartNew();
+
+            try
+            {
+                using var ping = new Ping();
+                var reply =
+                    await ping.SendPingAsync(
+                        gatewayHost,
+                        3000);
+
+                pingWatch.Stop();
+
+                results.Add(new DiagnosticItem(
+                    "ICMP gateway",
+                    reply.Status == IPStatus.Success
+                        ? "PASS"
+                        : "WARN",
+                    reply.Status == IPStatus.Success
+                        ? $"Gateway replied from {reply.Address}."
+                        : $"Ping status: {reply.Status}. Some modems block ICMP even when HTTP works.",
+                    pingWatch.ElapsedMilliseconds));
+            }
+            catch (Exception ex)
+            {
+                pingWatch.Stop();
+
+                results.Add(new DiagnosticItem(
+                    "ICMP gateway",
+                    "WARN",
+                    $"Ping failed: {ex.Message}. HTTP/API checks will continue.",
+                    pingWatch.ElapsedMilliseconds));
+            }
+
+            var probeWatch = Stopwatch.StartNew();
+            var probe =
+                await context.Adapter.ProbeAsync(
+                    context.Candidate);
+            probeWatch.Stop();
+
+            results.Add(new DiagnosticItem(
+                "Adapter probe",
+                probe.Reachable ? "PASS" : "FAIL",
+                probe.Detail ??
+                (probe.Reachable
+                    ? "Adapter recognized the modem."
+                    : "Adapter could not reach the modem."),
+                probeWatch.ElapsedMilliseconds));
+
+            if (context.Adapter is IModemAuthenticationProvider auth)
+            {
+                var watch = Stopwatch.StartNew();
+
+                try
+                {
+                    var state =
+                        await auth.GetAuthenticationStateAsync(
+                            context.Candidate);
+                    watch.Stop();
+
+                    results.Add(new DiagnosticItem(
+                        "Authentication",
+                        state.IsLoggedIn
+                            ? "PASS"
+                            : state.IsLocked
+                                ? "WARN"
+                                : "INFO",
+                        state.IsLoggedIn
+                            ? "Admin session is authenticated."
+                            : state.IsLocked
+                                ? $"Login is temporarily locked for about {state.RemainingWaitSeconds} second(s)."
+                                : state.Detail ?? "Login is available but the session is not authenticated.",
+                        watch.ElapsedMilliseconds));
+                }
+                catch (Exception ex)
+                {
+                    watch.Stop();
+
+                    results.Add(new DiagnosticItem(
+                        "Authentication",
+                        "WARN",
+                        ex.Message,
+                        watch.ElapsedMilliseconds));
+                }
+            }
+
+            await RunDiagnosticFeatureCheckAsync(
+                results,
+                "Dashboard API",
+                async () =>
+                {
+                    if (context.Adapter is not IModemDashboardProvider provider)
+                        return "Adapter does not implement dashboard telemetry.";
+
+                    var data =
+                        await provider.GetDashboardAsync(
+                            context.Candidate);
+
+                    return $"Model {data.Model}; network {data.NetworkType ?? "N/A"}; signal {(data.SignalPercent is null ? "N/A" : data.SignalPercent + "%")}.";
+                });
+
+            await RunDiagnosticFeatureCheckAsync(
+                results,
+                "Network API",
+                async () =>
+                {
+                    if (context.Adapter is not IModemNetworkProvider provider)
+                        return "Adapter does not implement network telemetry.";
+
+                    var data =
+                        await provider.GetNetworkAsync(
+                            context.Candidate);
+
+                    return $"{data.ConnectionState ?? "Unknown"}; {data.NetworkType ?? "Unknown"}; WAN {data.WanIp ?? "N/A"}.";
+                });
+
+            await RunDiagnosticFeatureCheckAsync(
+                results,
+                "Wi-Fi API",
+                async () =>
+                {
+                    if (context.Adapter is not IModemWifiProvider provider)
+                        return "Adapter does not implement Wi-Fi reads.";
+
+                    var data =
+                        await provider.GetWifiAsync(
+                            context.Candidate);
+
+                    return $"SSID {data.Ssid ?? "N/A"}; radio {data.EnabledDisplay}; channel {data.Channel ?? "N/A"}.";
+                });
+
+            await RunDiagnosticFeatureCheckAsync(
+                results,
+                "Traffic API",
+                async () =>
+                {
+                    if (context.Adapter is not IModemTrafficProvider provider)
+                        return "Adapter does not implement traffic counters.";
+
+                    var data =
+                        await provider.GetTrafficAsync(
+                            context.Candidate);
+
+                    return $"Session {TrafficFormat.Bytes(data.CurrentTotalBytes)}; lifetime {TrafficFormat.Bytes(data.TotalBytes)}.";
+                });
+
+            await RunDiagnosticFeatureCheckAsync(
+                results,
+                "Client API",
+                async () =>
+                {
+                    if (context.Adapter is not IModemConnectedDevicesProvider provider)
+                        return "Adapter does not implement client discovery.";
+
+                    var data =
+                        await provider.GetConnectedDevicesAsync(
+                            context.Candidate);
+
+                    return $"{data.Count} connected device(s) reported.";
+                });
+
+            await RunDiagnosticFeatureCheckAsync(
+                results,
+                "SMS API",
+                async () =>
+                {
+                    if (context.Adapter is not IModemSmsProvider provider)
+                        return "Adapter does not implement SMS.";
+
+                    var counts =
+                        await provider.GetSmsCountsAsync(
+                            context.Candidate);
+
+                    return $"Inbox {counts.LocalInbox}; unread {counts.LocalUnread}; sent {counts.LocalOutbox}.";
+                });
+
+            DiagnosticsListView.ItemsSource = results;
+
+            var failures =
+                results.Count(x => x.Status == "FAIL");
+
+            DiagnosticsInfoBar.Severity =
+                failures == 0
+                    ? InfoBarSeverity.Success
+                    : InfoBarSeverity.Warning;
+
+            DiagnosticsInfoBar.Title =
+                failures == 0
+                    ? "Diagnostics completed"
+                    : "Diagnostics completed with failures";
+
+            DiagnosticsInfoBar.Message =
+                failures == 0
+                    ? $"{results.Count} checks completed. Review WARN/INFO rows for firmware limitations."
+                    : $"{failures} check(s) failed. Review the results below.";
+
+            DiagnosticsInfoBar.IsOpen = true;
+        }
+        catch (Exception ex)
+        {
+            results.Add(new DiagnosticItem(
+                "Diagnostics",
+                "FAIL",
+                ex.Message));
+
+            DiagnosticsListView.ItemsSource = results;
+
+            DiagnosticsInfoBar.Severity =
+                InfoBarSeverity.Error;
+            DiagnosticsInfoBar.Title =
+                "Diagnostics could not complete";
+            DiagnosticsInfoBar.Message =
+                ex.Message;
+            DiagnosticsInfoBar.IsOpen = true;
+        }
+        finally
+        {
+            RunDiagnosticsButton.IsEnabled = true;
+        }
+    }
+
+    private static async Task RunDiagnosticFeatureCheckAsync(
+        List<DiagnosticItem> results,
+        string name,
+        Func<Task<string>> check)
+    {
+        var watch = Stopwatch.StartNew();
+
+        try
+        {
+            var detail = await check();
+            watch.Stop();
+
+            var unsupported =
+                detail.Contains(
+                    "does not implement",
+                    StringComparison.OrdinalIgnoreCase);
+
+            results.Add(new DiagnosticItem(
+                name,
+                unsupported ? "INFO" : "PASS",
+                detail,
+                watch.ElapsedMilliseconds));
+        }
+        catch (Exception ex)
+        {
+            watch.Stop();
+
+            results.Add(new DiagnosticItem(
+                name,
+                "FAIL",
+                ex.Message,
+                watch.ElapsedMilliseconds));
+        }
     }
 
     private async void RefreshSms_Click(
