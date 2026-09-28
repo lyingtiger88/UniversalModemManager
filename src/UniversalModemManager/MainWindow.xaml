@@ -113,6 +113,10 @@
                                      Title="No modem profile is locked"
                                      Message="Open Modem profile, choose a model and register it. The app will then keep that identity locked until you explicitly unlock it." />
 
+                            <InfoBar x:Name="DashboardStatusBar"
+                                     IsOpen="False"
+                                     IsClosable="True" />
+
                             <Grid ColumnSpacing="12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="2*" />
@@ -137,27 +141,85 @@
                                 <Border Grid.Column="1" Style="{StaticResource CardStyle}">
                                     <StackPanel Spacing="8">
                                         <TextBlock Text="Connection" Opacity="0.7" />
-                                        <TextBlock Text="—" Style="{StaticResource MetricValueStyle}" />
-                                        <TextBlock Text="Adapter pending" Opacity="0.7" />
+                                        <TextBlock x:Name="DashboardConnectionText"
+                                                   Text="—"
+                                                   Style="{StaticResource MetricValueStyle}" />
+                                        <TextBlock x:Name="DashboardConnectionDetailText"
+                                                   Text="No live data"
+                                                   Opacity="0.7"
+                                                   TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
                                 </Border>
 
                                 <Border Grid.Column="2" Style="{StaticResource CardStyle}">
                                     <StackPanel Spacing="8">
                                         <TextBlock Text="Signal" Opacity="0.7" />
-                                        <TextBlock Text="—" Style="{StaticResource MetricValueStyle}" />
-                                        <TextBlock Text="No signal API yet" Opacity="0.7" />
+                                        <TextBlock x:Name="DashboardSignalText"
+                                                   Text="—"
+                                                   Style="{StaticResource MetricValueStyle}" />
+                                        <TextBlock x:Name="DashboardSignalDetailText"
+                                                   Text="No live data"
+                                                   Opacity="0.7" />
                                     </StackPanel>
                                 </Border>
 
                                 <Border Grid.Column="3" Style="{StaticResource CardStyle}">
                                     <StackPanel Spacing="8">
                                         <TextBlock Text="Clients" Opacity="0.7" />
-                                        <TextBlock Text="—" Style="{StaticResource MetricValueStyle}" />
-                                        <TextBlock Text="Adapter pending" Opacity="0.7" />
+                                        <TextBlock x:Name="DashboardClientsText"
+                                                   Text="—"
+                                                   Style="{StaticResource MetricValueStyle}" />
+                                        <TextBlock x:Name="DashboardClientsDetailText"
+                                                   Text="No live data"
+                                                   Opacity="0.7"
+                                                   TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
                                 </Border>
                             </Grid>
+
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel Spacing="14">
+                                    <TextBlock Text="Live modem details"
+                                               Style="{StaticResource SectionTitleStyle}" />
+                                    <Grid ColumnSpacing="20" RowSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Firmware" Opacity="0.65" />
+                                            <TextBlock x:Name="DashboardFirmwareText" Text="—" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Spacing="3">
+                                            <TextBlock Text="WAN IP" Opacity="0.65" />
+                                            <TextBlock x:Name="DashboardWanIpText" Text="—" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" Spacing="3">
+                                            <TextBlock Text="Battery" Opacity="0.65" />
+                                            <TextBlock x:Name="DashboardBatteryText" Text="—" FontWeight="SemiBold" />
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Row="1" Spacing="3">
+                                            <TextBlock Text="RSRP / RSRQ" Opacity="0.65" />
+                                            <TextBlock x:Name="DashboardRsrpRsrqText" Text="—" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.Column="1" Spacing="3">
+                                            <TextBlock Text="SINR" Opacity="0.65" />
+                                            <TextBlock x:Name="DashboardSinrText" Text="—" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.Column="2" Spacing="3">
+                                            <TextBlock Text="Wi-Fi SSID" Opacity="0.65" />
+                                            <TextBlock x:Name="DashboardSsidText" Text="—" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
 
                             <Border Style="{StaticResource CardStyle}">
                                 <Grid ColumnSpacing="18">
@@ -313,6 +375,69 @@
                             <InfoBar x:Name="ProbeResultBar"
                                      IsOpen="False"
                                      IsClosable="True" />
+
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel Spacing="14">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Admin login"
+                                                       Style="{StaticResource SectionTitleStyle}" />
+                                            <TextBlock Text="Credentials are sent only to the selected modem. The password is never written to the modem profile."
+                                                       Opacity="0.65"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <Border Grid.Column="1"
+                                                CornerRadius="12"
+                                                Padding="10,4"
+                                                Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                                                VerticalAlignment="Center">
+                                            <TextBlock x:Name="AuthenticationStateText"
+                                                       Text="Not checked"
+                                                       FontSize="12" />
+                                        </Border>
+                                    </Grid>
+
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel Spacing="6">
+                                            <TextBlock Text="Username" />
+                                            <TextBox x:Name="AdminUsernameBox"
+                                                     Text="admin"
+                                                     PlaceholderText="admin" />
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Column="1" Spacing="6">
+                                            <TextBlock Text="Password" />
+                                            <PasswordBox x:Name="AdminPasswordBox"
+                                                         PlaceholderText="Modem admin password"
+                                                         PasswordRevealMode="Peek" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Right"
+                                                Spacing="8">
+                                        <Button Content="Check login state"
+                                                Click="CheckLoginState_Click" />
+                                        <Button x:Name="AdminLoginButton"
+                                                Content="Login"
+                                                Style="{StaticResource AccentButtonStyle}"
+                                                Click="AdminLogin_Click" />
+                                    </StackPanel>
+
+                                    <InfoBar x:Name="LoginInfoBar"
+                                             IsOpen="False"
+                                             IsClosable="True" />
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
                     </ScrollViewer>
 
