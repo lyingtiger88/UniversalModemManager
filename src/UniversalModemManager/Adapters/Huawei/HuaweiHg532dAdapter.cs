@@ -364,7 +364,7 @@ public sealed class HuaweiHg532dAdapter :
         var hasPassword =
             Regex.IsMatch(
                 html,
-                @"type\s*=\s*['\"]?password",
+                "type\\s*=\\s*[\'\"]?password",
                 RegexOptions.IgnoreCase);
 
         var hasLoginAction =
@@ -373,7 +373,7 @@ public sealed class HuaweiHg532dAdapter :
                 StringComparison.OrdinalIgnoreCase) ||
             Regex.IsMatch(
                 html,
-                @"action\s*=\s*['\"][^'\"]*login",
+                "action\\s*=\\s*[\'\"][^\'\"]*login",
                 RegexOptions.IgnoreCase);
 
         var hasCredentialNames =
@@ -416,7 +416,7 @@ public sealed class HuaweiHg532dAdapter :
         var match =
             Regex.Match(
                 html,
-                @"<form[^>]*action\s*=\s*['\"](?<action>[^'\"]+)['\"]",
+                "<form[^>]*action\\s*=\\s*[\'\"](?<action>[^\'\"]+)[\'\"]",
                 RegexOptions.IgnoreCase |
                 RegexOptions.Singleline);
 
@@ -451,7 +451,7 @@ public sealed class HuaweiHg532dAdapter :
         var matches =
             Regex.Matches(
                 html,
-                @"<input\b[^>]*type\s*=\s*['\"]?hidden['\"]?[^>]*>",
+                "<input\\b[^>]*type\\s*=\\s*[\'\"]?hidden[\'\"]?[^>]*>",
                 RegexOptions.IgnoreCase |
                 RegexOptions.Singleline);
 
@@ -484,7 +484,7 @@ public sealed class HuaweiHg532dAdapter :
         var match =
             Regex.Match(
                 html,
-                $@"\b{Regex.Escape(attribute)}\s*=\s*['\"](?<value>[^'\"]*)['\"]",
+                $"\\b{Regex.Escape(attribute)}\\s*=\\s*[\'\"](?<value>[^\'\"]*)[\'\"]",
                 RegexOptions.IgnoreCase);
 
         return match.Success
