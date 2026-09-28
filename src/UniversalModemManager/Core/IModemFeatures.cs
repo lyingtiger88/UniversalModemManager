@@ -47,6 +47,11 @@ public interface IModemWifiProvider
     Task<ModemWifiSnapshot> GetWifiAsync(
         ModemCandidate candidate,
         CancellationToken cancellationToken = default);
+
+    Task UpdateWifiAsync(
+        ModemCandidate candidate,
+        WifiUpdateRequest request,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IModemSmsProvider
@@ -76,5 +81,24 @@ public interface IModemSmsProvider
     Task DeleteSmsAsync(
         ModemCandidate candidate,
         string index,
+        CancellationToken cancellationToken = default);
+}
+
+
+public interface IModemTrafficProvider
+{
+    Task<TrafficStatistics> GetTrafficAsync(
+        ModemCandidate candidate,
+        CancellationToken cancellationToken = default);
+
+    Task<MonthTrafficStatistics> GetMonthTrafficAsync(
+        ModemCandidate candidate,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IModemConnectedDevicesProvider
+{
+    Task<IReadOnlyList<ConnectedDevice>> GetConnectedDevicesAsync(
+        ModemCandidate candidate,
         CancellationToken cancellationToken = default);
 }
