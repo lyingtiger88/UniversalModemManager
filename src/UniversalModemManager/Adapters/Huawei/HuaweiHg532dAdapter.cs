@@ -696,7 +696,7 @@ public sealed class HuaweiHg532dAdapter :
         var xhrMatches =
             Regex.Matches(
                 loginSource,
-                @"open\s*\(\s*['\"](?<method>GET|POST)['\"]\s*,\s*['\"](?<url>[^'\"]+)['\"]",
+                "open\\s*\\(\\s*['\"](?<method>GET|POST)['\"]\\s*,\\s*['\"](?<url>[^'\"]+)['\"]",
                 RegexOptions.IgnoreCase |
                 RegexOptions.Singleline);
 
