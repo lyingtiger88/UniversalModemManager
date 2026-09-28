@@ -621,6 +621,32 @@ public sealed partial class MainWindow : Window
 
             var snapshot = await provider.GetDashboardAsync(candidate);
 
+            if (IsPlaceholderModel(_profile.Model) &&
+                !IsPlaceholderModel(snapshot.Model))
+            {
+                var previousAutoName =
+                    $"{_profile.Manufacturer} {_profile.Model}";
+
+                _profile.Model = snapshot.Model;
+
+                if (_profile.DisplayName.Equals(
+                        previousAutoName,
+                        StringComparison.OrdinalIgnoreCase) ||
+                    _profile.DisplayName.Contains(
+                        "Unknown",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    _profile.DisplayName =
+                        $"{_profile.Manufacturer} {snapshot.Model}";
+                }
+
+                _profile.LastSeenUtc = DateTime.UtcNow;
+                await _profileStore.SaveAsync(_profile);
+                ApplyProfileToUi();
+            }
+
+            ApplyAdapterCapabilities(_activeAdapter);
+
             DashboardModemText.Text = snapshot.Model;
             DashboardGatewayText.Text = $"Gateway {_profile.Gateway}";
 
@@ -2459,7 +2485,8 @@ public sealed partial class MainWindow : Window
 
     private void ApplyProfileToUi()
     {
-        var locked = _profile?.IsLocked == true;
+        var locked =
+            _profile?.IsLocked == true;
 
         BrandComboBox.IsEnabled = !locked;
         ModelComboBox.IsEnabled = !locked;
@@ -2475,11 +2502,22 @@ public sealed partial class MainWindow : Window
             ProfileStateText.Text =
                 "No modem has been registered yet.";
 
-            LockBadgeText.Text = "Unlocked";
-            LockBadgeIcon.Glyph = "";
-            TitleProfileText.Text = "No modem registered";
-            DashboardModemText.Text = "Not registered";
-            DashboardGatewayText.Text = "Gateway —";
+            LockBadgeText.Text =
+                "Unlocked";
+            LockBadgeIcon.Glyph =
+                "";
+
+            TitleProfileIcon.Glyph =
+                "";
+            TitleProfileText.Text =
+                "No modem registered";
+
+            DashboardModemText.Text =
+                "Not registered";
+            DashboardGatewayText.Text =
+                "Gateway —";
+
+            ApplyAdapterCapabilities(null);
 
             ProfileInfoBar.IsOpen = true;
             ProfileInfoBar.Severity =
@@ -2492,8 +2530,11 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        var identityLabel =
+            ProfileIdentityLabel(_profile);
+
         ProfileStateText.Text =
-            $"{_profile.DisplayName}  •  {_profile.Manufacturer} {_profile.Model}\n{_profile.Gateway}";
+            $"{_profile.DisplayName}  •  {identityLabel}\n{_profile.Gateway}";
 
         LockBadgeText.Text =
             locked ? "Locked" : "Unlocked";
@@ -2501,11 +2542,14 @@ public sealed partial class MainWindow : Window
         LockBadgeIcon.Glyph =
             locked ? "" : "";
 
+        TitleProfileIcon.Glyph =
+            locked ? "" : "";
+
         TitleProfileText.Text =
-            $"{(locked ? "Locked" : "Registered")} • {_profile.Manufacturer} {_profile.Model}";
+            $"{(locked ? "Locked" : "Registered")} • {identityLabel}";
 
         DashboardModemText.Text =
-            $"{_profile.Manufacturer} {_profile.Model}";
+            identityLabel;
 
         DashboardGatewayText.Text =
             $"Gateway {_profile.Gateway}";
@@ -2526,12 +2570,21 @@ public sealed partial class MainWindow : Window
 
         var adapter =
             _activeAdapter ??
-            _adapterRegistry.Find(_profile.AdapterId);
+            _adapterRegistry.Find(
+                _profile.AdapterId);
 
         if (adapter is not null)
+        {
             SelectComboValue(
                 AdapterComboBox,
                 adapter.DisplayName);
+
+            ApplyAdapterCapabilities(adapter);
+        }
+        else
+        {
+            ApplyAdapterCapabilities(null);
+        }
 
         ProfileInfoBar.IsOpen = true;
         ProfileInfoBar.Severity =
@@ -2548,6 +2601,66 @@ public sealed partial class MainWindow : Window
             locked
                 ? "Automatic adapter work stays bound to this modem profile until you unlock it."
                 : "You can change the modem selection and register a different profile.";
+    }
+
+    private void ApplyAdapterCapabilities(
+        IModemAdapter? adapter)
+    {
+        var smsAvailable =
+            adapter is IModemSmsProvider &&
+            adapter.Capabilities.HasFlag(
+                ModemCapability.Sms);
+
+        SmsNavigationItem.IsEnabled =
+            smsAvailable;
+
+        SmsNavigationItem.Opacity =
+            smsAvailable ? 1.0 : 0.45;
+
+        ToolTipService.SetToolTip(
+            SmsNavigationItem,
+            smsAvailable
+                ? "SMS is supported by the active modem adapter."
+                : "SMS is unavailable for this modem. Non-cellular/ADSL/VDSL/router profiles keep this section disabled.");
+    }
+
+    private static string ProfileIdentityLabel(
+        ModemProfile profile)
+    {
+        var model =
+            IsPlaceholderModel(profile.Model)
+                ? "modem"
+                : profile.Model;
+
+        return $"{profile.Manufacturer} {model}";
+    }
+
+    private static bool IsPlaceholderModel(
+        string? model)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+            return true;
+
+        var value = model.Trim();
+
+        return value.Equals(
+                   "Unknown",
+                   StringComparison.OrdinalIgnoreCase) ||
+               value.Equals(
+                   "Modem",
+                   StringComparison.OrdinalIgnoreCase) ||
+               value.Equals(
+                   "Auto detect",
+                   StringComparison.OrdinalIgnoreCase) ||
+               value.Equals(
+                   "Other / Unknown",
+                   StringComparison.OrdinalIgnoreCase) ||
+               value.Equals(
+                   "HiLink modem",
+                   StringComparison.OrdinalIgnoreCase) ||
+               value.Equals(
+                   "Huawei HiLink",
+                   StringComparison.OrdinalIgnoreCase);
     }
 
     private static void SelectComboValue(
