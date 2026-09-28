@@ -107,7 +107,7 @@ public sealed partial class MainWindow : Window
         ModelComboBox.SelectedIndex = 0;
     }
 
-    private void RootNavigation_SelectionChanged(
+    private async void RootNavigation_SelectionChanged(
         NavigationView sender,
         NavigationViewSelectionChangedEventArgs args)
     {
@@ -132,15 +132,13 @@ public sealed partial class MainWindow : Window
                 break;
 
             case "network":
-                ShowPlaceholder(
-                    "Network",
-                    "Network status, WAN address, cellular technology, signal metrics, APN and network-mode controls will appear here when supported.");
+                ShowPage(NetworkPage);
+                await RefreshNetworkAsync(showSuccess: false);
                 break;
 
             case "wifi":
-                ShowPlaceholder(
-                    "Wi-Fi",
-                    "SSID, channel, radio state, security, guest network and Wi-Fi configuration will be enabled by the active adapter.");
+                ShowPage(WifiPage);
+                await RefreshWifiAsync(showSuccess: false);
                 break;
 
             case "clients":
@@ -156,9 +154,8 @@ public sealed partial class MainWindow : Window
                 break;
 
             case "sms":
-                ShowPlaceholder(
-                    "SMS",
-                    "Inbox, sent messages, drafts and SMS composer will activate only for modems exposing a supported SMS API.");
+                ShowPage(SmsPage);
+                await RefreshSmsAsync(showSuccess: false);
                 break;
 
             case "diagnostics":
@@ -173,6 +170,9 @@ public sealed partial class MainWindow : Window
     {
         DashboardPage.Visibility = Visibility.Collapsed;
         ModemPage.Visibility = Visibility.Collapsed;
+        NetworkPage.Visibility = Visibility.Collapsed;
+        WifiPage.Visibility = Visibility.Collapsed;
+        SmsPage.Visibility = Visibility.Collapsed;
         PlaceholderPage.Visibility = Visibility.Collapsed;
         target.Visibility = Visibility.Visible;
     }
@@ -685,6 +685,447 @@ public sealed partial class MainWindow : Window
         DashboardSsidText.Text = "—";
     }
 
+    private async void RefreshNetwork_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        await RefreshNetworkAsync(showSuccess: true);
+    }
+
+    private async Task RefreshNetworkAsync(
+        bool showSuccess)
+    {
+        try
+        {
+            var context = await ResolveFeatureContextAsync();
+
+            if (context.Adapter is not IModemNetworkProvider provider)
+            {
+                SetNetworkInfo(
+                    InfoBarSeverity.Warning,
+                    "Network data unavailable",
+                    $"{context.Adapter.DisplayName} does not currently implement live network telemetry.");
+                return;
+            }
+
+            var data = await provider.GetNetworkAsync(context.Candidate);
+
+            NetworkConnectionText.Text =
+                data.ConnectionState ?? "—";
+
+            NetworkTypeText.Text =
+                data.NetworkType ?? "—";
+
+            NetworkOperatorText.Text =
+                data.OperatorName ?? "—";
+
+            NetworkOperatorCodeText.Text =
+                string.IsNullOrWhiteSpace(data.OperatorCode)
+                    ? "Operator code —"
+                    : data.OperatorCode;
+
+            NetworkSignalText.Text =
+                data.SignalPercent is null
+                    ? "—"
+                    : $"{data.SignalPercent}%";
+
+            NetworkRoamingText.Text =
+                data.IsRoaming is null
+                    ? "Roaming —"
+                    : data.IsRoaming.Value
+                        ? "Roaming"
+                        : "Home network";
+
+            NetworkWanIpText.Text =
+                data.WanIp ?? "—";
+
+            NetworkRsrpText.Text =
+                data.Rsrp ?? "—";
+
+            NetworkRsrqText.Text =
+                data.Rsrq ?? "—";
+
+            NetworkSinrText.Text =
+                data.Sinr ?? "—";
+
+            NetworkBatteryText.Text =
+                data.BatteryPercent is null
+                    ? "—"
+                    : $"{data.BatteryPercent}%";
+
+            if (showSuccess)
+            {
+                SetNetworkInfo(
+                    InfoBarSeverity.Success,
+                    "Network data refreshed",
+                    $"Live network information was read using {context.Adapter.DisplayName}.");
+            }
+            else
+            {
+                NetworkInfoBar.IsOpen = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            SetNetworkInfo(
+                InfoBarSeverity.Error,
+                "Could not read network data",
+                ex.Message);
+        }
+    }
+
+    private void SetNetworkInfo(
+        InfoBarSeverity severity,
+        string title,
+        string message)
+    {
+        NetworkInfoBar.Severity = severity;
+        NetworkInfoBar.Title = title;
+        NetworkInfoBar.Message = message;
+        NetworkInfoBar.IsOpen = true;
+    }
+
+    private async void RefreshWifi_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        await RefreshWifiAsync(showSuccess: true);
+    }
+
+    private async Task RefreshWifiAsync(
+        bool showSuccess)
+    {
+        try
+        {
+            var context = await ResolveFeatureContextAsync();
+
+            if (context.Adapter is not IModemWifiProvider provider)
+            {
+                SetWifiInfo(
+                    InfoBarSeverity.Warning,
+                    "Wi-Fi data unavailable",
+                    $"{context.Adapter.DisplayName} does not currently implement Wi-Fi configuration reads.");
+                return;
+            }
+
+            var data = await provider.GetWifiAsync(context.Candidate);
+
+            WifiSsidText.Text = data.Ssid ?? "—";
+            WifiEnabledText.Text = data.EnabledDisplay;
+            WifiHiddenText.Text = data.HiddenDisplay;
+            WifiModeText.Text = data.Mode ?? "—";
+            WifiChannelText.Text = data.Channel ?? "—";
+            WifiMaxClientsText.Text =
+                data.MaxClients?.ToString() ?? "—";
+            WifiIsolationText.Text =
+                data.IsolationDisplay;
+
+            if (showSuccess)
+            {
+                SetWifiInfo(
+                    InfoBarSeverity.Success,
+                    "Wi-Fi data refreshed",
+                    $"Wireless settings were read using {context.Adapter.DisplayName}.");
+            }
+            else
+            {
+                WifiInfoBar.IsOpen = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            SetWifiInfo(
+                InfoBarSeverity.Error,
+                "Could not read Wi-Fi data",
+                ex.Message);
+        }
+    }
+
+    private void SetWifiInfo(
+        InfoBarSeverity severity,
+        string title,
+        string message)
+    {
+        WifiInfoBar.Severity = severity;
+        WifiInfoBar.Title = title;
+        WifiInfoBar.Message = message;
+        WifiInfoBar.IsOpen = true;
+    }
+
+    private async void RefreshSms_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        await RefreshSmsAsync(showSuccess: true);
+    }
+
+    private async void SmsBoxComboBox_SelectionChanged(
+        object sender,
+        SelectionChangedEventArgs e)
+    {
+        if (_profile is null && _activeAdapter is null)
+            return;
+
+        await RefreshSmsAsync(showSuccess: false);
+    }
+
+    private async Task RefreshSmsAsync(
+        bool showSuccess)
+    {
+        try
+        {
+            var context = await ResolveFeatureContextAsync();
+
+            if (context.Adapter is not IModemSmsProvider provider)
+            {
+                SetSmsInfo(
+                    InfoBarSeverity.Warning,
+                    "SMS unavailable",
+                    $"{context.Adapter.DisplayName} does not currently implement the modem SMS API.");
+                return;
+            }
+
+            var counts = await provider.GetSmsCountsAsync(
+                context.Candidate);
+
+            var box = GetSelectedSmsBox();
+
+            var messages = await provider.GetSmsMessagesAsync(
+                context.Candidate,
+                box,
+                page: 1,
+                readCount: 20);
+
+            SmsCountsText.Text =
+                $"Inbox {counts.LocalInbox} • Unread {counts.LocalUnread} • Sent {counts.LocalOutbox} • Draft {counts.LocalDraft}";
+
+            SmsListView.ItemsSource = messages;
+
+            if (showSuccess)
+            {
+                SetSmsInfo(
+                    InfoBarSeverity.Success,
+                    "SMS refreshed",
+                    $"{messages.Count} message(s) loaded from {box}.");
+            }
+            else
+            {
+                SmsInfoBar.IsOpen = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            SetSmsInfo(
+                InfoBarSeverity.Error,
+                "Could not read SMS",
+                BuildSmsErrorMessage(ex));
+        }
+    }
+
+    private async void SendSms_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        SendSmsButton.IsEnabled = false;
+
+        try
+        {
+            var context = await ResolveFeatureContextAsync();
+
+            if (context.Adapter is not IModemSmsProvider provider)
+            {
+                SetSmsInfo(
+                    InfoBarSeverity.Warning,
+                    "SMS unavailable",
+                    $"{context.Adapter.DisplayName} does not support SMS sending.");
+                return;
+            }
+
+            await provider.SendSmsAsync(
+                context.Candidate,
+                SmsPhoneBox.Text,
+                SmsMessageBox.Text);
+
+            SmsMessageBox.Text = string.Empty;
+
+            SetSmsInfo(
+                InfoBarSeverity.Success,
+                "SMS submitted",
+                "The modem accepted the message for sending.");
+
+            await RefreshSmsAsync(showSuccess: false);
+        }
+        catch (Exception ex)
+        {
+            SetSmsInfo(
+                InfoBarSeverity.Error,
+                "Could not send SMS",
+                BuildSmsErrorMessage(ex));
+        }
+        finally
+        {
+            SendSmsButton.IsEnabled = true;
+        }
+    }
+
+    private async void MarkSmsRead_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (SmsListView.SelectedItem is not SmsMessage message)
+        {
+            SetSmsInfo(
+                InfoBarSeverity.Informational,
+                "Select a message",
+                "Choose an SMS from the list first.");
+            return;
+        }
+
+        try
+        {
+            var context = await ResolveFeatureContextAsync();
+
+            if (context.Adapter is not IModemSmsProvider provider)
+                return;
+
+            await provider.MarkSmsReadAsync(
+                context.Candidate,
+                message.Index);
+
+            await RefreshSmsAsync(showSuccess: false);
+
+            SetSmsInfo(
+                InfoBarSeverity.Success,
+                "Message updated",
+                "The selected SMS was marked as read.");
+        }
+        catch (Exception ex)
+        {
+            SetSmsInfo(
+                InfoBarSeverity.Error,
+                "Could not update SMS",
+                BuildSmsErrorMessage(ex));
+        }
+    }
+
+    private async void DeleteSms_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (SmsListView.SelectedItem is not SmsMessage message)
+        {
+            SetSmsInfo(
+                InfoBarSeverity.Informational,
+                "Select a message",
+                "Choose an SMS from the list first.");
+            return;
+        }
+
+        try
+        {
+            var context = await ResolveFeatureContextAsync();
+
+            if (context.Adapter is not IModemSmsProvider provider)
+                return;
+
+            await provider.DeleteSmsAsync(
+                context.Candidate,
+                message.Index);
+
+            await RefreshSmsAsync(showSuccess: false);
+
+            SetSmsInfo(
+                InfoBarSeverity.Success,
+                "Message deleted",
+                "The modem confirmed SMS deletion.");
+        }
+        catch (Exception ex)
+        {
+            SetSmsInfo(
+                InfoBarSeverity.Error,
+                "Could not delete SMS",
+                BuildSmsErrorMessage(ex));
+        }
+    }
+
+    private SmsBoxType GetSelectedSmsBox()
+    {
+        var content =
+            (SmsBoxComboBox.SelectedItem as ComboBoxItem)
+            ?.Content
+            ?.ToString();
+
+        return content switch
+        {
+            "Sent" => SmsBoxType.Sent,
+            "Draft" => SmsBoxType.Draft,
+            _ => SmsBoxType.Inbox
+        };
+    }
+
+    private void SetSmsInfo(
+        InfoBarSeverity severity,
+        string title,
+        string message)
+    {
+        SmsInfoBar.Severity = severity;
+        SmsInfoBar.Title = title;
+        SmsInfoBar.Message = message;
+        SmsInfoBar.IsOpen = true;
+    }
+
+    private static string BuildSmsErrorMessage(
+        Exception ex)
+    {
+        if (ex.Message.Contains(
+                "108006",
+                StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains(
+                "login is required",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return "Admin login is required for SMS on this modem. Open Modem profile, log in, then return to SMS.";
+        }
+
+        return ex.Message;
+    }
+
+    private async Task<FeatureContext>
+        ResolveFeatureContextAsync()
+    {
+        if (_profile is not null)
+        {
+            var adapter =
+                _activeAdapter ??
+                await ResolveProfileAdapterAsync();
+
+            return new FeatureContext(
+                adapter,
+                CandidateFromProfile());
+        }
+
+        var candidate =
+            TryBuildCandidate() ??
+            throw new InvalidOperationException(
+                "Register or select a modem first.");
+
+        var resolved =
+            await ResolveAdapterForCandidateAsync(candidate);
+
+        if (!resolved.Probe.Reachable)
+        {
+            throw new InvalidOperationException(
+                resolved.Probe.Detail ??
+                "The modem did not respond.");
+        }
+
+        _activeAdapter = resolved.Adapter;
+
+        return new FeatureContext(
+            resolved.Adapter,
+            candidate);
+    }
+
     private async Task<AdapterDetectionResult>
         ResolveAdapterForCandidateAsync(
             ModemCandidate candidate)
@@ -987,6 +1428,10 @@ public sealed partial class MainWindow : Window
     }
 
     private sealed record AuthenticationContext(
+        IModemAdapter Adapter,
+        ModemCandidate Candidate);
+
+    private sealed record FeatureContext(
         IModemAdapter Adapter,
         ModemCandidate Candidate);
 }
