@@ -28,7 +28,7 @@ public sealed class GenericHttpAdapter : IModemAdapter
         ("D-Link", ["d-link", "dlink", "dsl-2", "dsl-3"]),
         ("Zyxel", ["zyxel", "zyxel communications", "vmg", "p-660"]),
         ("Tenda", ["tenda", "d151", "d301", "v300"]),
-        ("Huawei", ["huawei", "echolife", "hg5", "hg6", "ws3"]),
+        ("Huawei", ["huawei", "echolife", "hg532d", "hg5", "hg6", "ws3"]),
         ("ZTE", ["zte", "zxhn", "h108", "h168"]),
         ("ASUS", ["asus", "dsl-ac", "dsl-n"]),
         ("NETGEAR", ["netgear", "dgn", "dm200"]),
@@ -65,7 +65,7 @@ public sealed class GenericHttpAdapter : IModemAdapter
         "TD-W", "TD-8", "TD-9", "Archer VR",
         "DSL-", "DIR-",
         "VMG", "P-660", "P660",
-        "HG5", "HG6", "EchoLife",
+        "HG532d", "HG5", "HG6", "EchoLife",
         "ZXHN", "H108", "H168",
         "DSL-AC", "DSL-N",
         "DGN", "DM200",
@@ -106,6 +106,26 @@ public sealed class GenericHttpAdapter : IModemAdapter
             var brand = DetectBrand(evidence);
             var model = DetectModel(evidence);
             var isDsl = DetectDsl(evidence);
+
+            var explicitModel =
+                !candidate.Model.Equals(
+                    "Auto detect",
+                    StringComparison.OrdinalIgnoreCase) &&
+                !candidate.Model.Equals(
+                    "Other / Unknown",
+                    StringComparison.OrdinalIgnoreCase);
+
+            if (explicitModel &&
+                (string.IsNullOrWhiteSpace(model) ||
+                 model.Equals(
+                     "ADSL/VDSL Router",
+                     StringComparison.OrdinalIgnoreCase) ||
+                 model.Equals(
+                     "Router / Modem",
+                     StringComparison.OrdinalIgnoreCase)))
+            {
+                model = candidate.Model;
+            }
 
             if (string.IsNullOrWhiteSpace(model) && isDsl)
                 model = "ADSL/VDSL Router";
@@ -191,8 +211,15 @@ public sealed class GenericHttpAdapter : IModemAdapter
                     ? "Generic"
                     : candidate.Manufacturer),
             Model:
-                probe.DetectedModel ??
-                "Router / Modem",
+                !candidate.Model.Equals(
+                    "Auto detect",
+                    StringComparison.OrdinalIgnoreCase) &&
+                !candidate.Model.Equals(
+                    "Other / Unknown",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? candidate.Model
+                    : probe.DetectedModel ??
+                      "Router / Modem",
             Firmware: null,
             Gateway:
                 NormalizeBaseUri(candidate.Gateway).ToString(),
