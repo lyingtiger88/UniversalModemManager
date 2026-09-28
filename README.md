@@ -70,3 +70,13 @@ The first production adapter now supports:
 - Real diagnostics covering gateway ping, adapter probe, authentication and supported APIs
 
 Per-client traffic is shown only when firmware exposes real counters. Unsupported values remain N/A.
+
+
+## Conversation-based SMS and phonebook
+
+- SMS is grouped into conversations by normalized phone number.
+- Inbox and sent messages are merged into one thread.
+- The internal phonebook resolves numbers to contact names.
+- Unknown senders can be added directly to Contacts.
+- SMS navigation is capability-driven and automatically disabled for adapters that do not expose SMS, including non-cellular/ADSL/VDSL/router profiles.
+- The title-bar modem badge is informational, uses a neutral Fluent card style, and upgrades placeholder model names when live identity data becomes available.
