@@ -14,6 +14,8 @@ public sealed class HuaweiHiLinkAdapter :
     IModemDashboardProvider,
     IModemNetworkProvider,
     IModemWifiProvider,
+    IModemTrafficProvider,
+    IModemConnectedDevicesProvider,
     IModemSmsProvider,
     IModemAuthenticationProvider,
     IDisposable
@@ -39,6 +41,7 @@ public sealed class HuaweiHiLinkAdapter :
         ModemCapability.NetworkStatus |
         ModemCapability.Wifi |
         ModemCapability.WifiClients |
+        ModemCapability.Traffic |
         ModemCapability.Sms |
         ModemCapability.Battery;
 
@@ -236,6 +239,335 @@ public sealed class HuaweiHiLinkAdapter :
             Mode: Value(xml, "WifiMode"),
             MaxClients: ParseInt(Value(xml, "WifiMaxAssoc", "TotalWifiUser")),
             ClientIsolation: ParseBool01(Value(xml, "WifiIsolate")));
+    }
+
+    public async Task UpdateWifiAsync(
+        ModemCandidate candidate,
+        WifiUpdateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureClient(candidate.Gateway);
+        await EnsureSessionAsync(cancellationToken);
+
+        var current = await GetXmlAsync(
+            "api/wlan/basic-settings",
+            cancellationToken);
+
+        if (request.Ssid is not null &&
+            string.IsNullOrWhiteSpace(request.Ssid))
+        {
+            throw new ArgumentException(
+                "SSID cannot be empty.",
+                nameof(request));
+        }
+
+        if (request.MaxClients is <= 0)
+        {
+            throw new ArgumentException(
+                "Max clients must be greater than zero.",
+                nameof(request));
+        }
+
+        var payload = new XElement("request");
+
+        AddWifiSetting(
+            payload,
+            "WifiEnable",
+            request.Enabled is null
+                ? Value(current, "WifiEnable")
+                : request.Enabled.Value ? "1" : "0");
+
+        AddWifiSetting(
+            payload,
+            "WifiSsid",
+            request.Ssid?.Trim() ??
+            Value(current, "WifiSsid", "SSID", "ssid"));
+
+        AddWifiSetting(
+            payload,
+            "WifiHide",
+            request.Hidden is null
+                ? Value(current, "WifiHide")
+                : request.Hidden.Value ? "1" : "0");
+
+        AddWifiSetting(
+            payload,
+            "WifiCountry",
+            Value(current, "WifiCountry"));
+
+        AddWifiSetting(
+            payload,
+            "WifiChannel",
+            request.Channel?.Trim() ??
+            Value(current, "WifiChannel"));
+
+        AddWifiSetting(
+            payload,
+            "WifiMode",
+            Value(current, "WifiMode"));
+
+        AddWifiSetting(
+            payload,
+            "WifiRate",
+            Value(current, "WifiRate"));
+
+        AddWifiSetting(
+            payload,
+            "WifiTxPower",
+            Value(current, "WifiTxPower"));
+
+        AddWifiSetting(
+            payload,
+            "WifiMaxAssoc",
+            request.MaxClients?.ToString() ??
+            Value(current, "WifiMaxAssoc", "TotalWifiUser"));
+
+        AddWifiSetting(
+            payload,
+            "WifiIsolate",
+            request.ClientIsolation is null
+                ? Value(current, "WifiIsolate")
+                : request.ClientIsolation.Value ? "1" : "0");
+
+        AddWifiSetting(
+            payload,
+            "WifiWMM",
+            Value(current, "WifiWMM"));
+
+        payload.Add(new XElement("WifiRestart", "1"));
+
+        var result = await PostXmlAsync(
+            "api/wlan/basic-settings",
+            payload,
+            cancellationToken);
+
+        if (!IsOkResponse(result))
+        {
+            throw new HuaweiHiLinkException(
+                "The modem did not confirm the Wi-Fi settings change.");
+        }
+    }
+
+    public async Task<TrafficStatistics> GetTrafficAsync(
+        ModemCandidate candidate,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureClient(candidate.Gateway);
+        await EnsureSessionAsync(cancellationToken);
+
+        var xml = await GetXmlAsync(
+            "api/monitoring/traffic-statistics",
+            cancellationToken);
+
+        return new TrafficStatistics(
+            CurrentConnectTimeSeconds:
+                ParseLong(Value(xml, "CurrentConnectTime")),
+            CurrentUploadBytes:
+                ParseLong(Value(xml, "CurrentUpload")),
+            CurrentDownloadBytes:
+                ParseLong(Value(xml, "CurrentDownload")),
+            CurrentUploadRateBytesPerSecond:
+                ParseLong(Value(xml, "CurrentUploadRate")),
+            CurrentDownloadRateBytesPerSecond:
+                ParseLong(Value(xml, "CurrentDownloadRate")),
+            TotalUploadBytes:
+                ParseLong(Value(xml, "TotalUpload")),
+            TotalDownloadBytes:
+                ParseLong(Value(xml, "TotalDownload")),
+            TotalConnectTimeSeconds:
+                ParseLong(Value(xml, "TotalConnectTime")));
+    }
+
+    public async Task<MonthTrafficStatistics> GetMonthTrafficAsync(
+        ModemCandidate candidate,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureClient(candidate.Gateway);
+        await EnsureSessionAsync(cancellationToken);
+
+        var xml = await GetXmlAsync(
+            "api/monitoring/month_statistics",
+            cancellationToken,
+            throwOnApiError: false);
+
+        if (xml.Name.LocalName.Equals(
+                "error",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return new MonthTrafficStatistics(
+                null,
+                null,
+                null);
+        }
+
+        return new MonthTrafficStatistics(
+            UploadBytes:
+                ParseLong(Value(
+                    xml,
+                    "CurrentMonthUpload",
+                    "MonthUpload")),
+            DownloadBytes:
+                ParseLong(Value(
+                    xml,
+                    "CurrentMonthDownload",
+                    "MonthDownload")),
+            DurationSeconds:
+                ParseLong(Value(
+                    xml,
+                    "MonthDuration",
+                    "CurrentMonthDuration")));
+    }
+
+    public async Task<IReadOnlyList<ConnectedDevice>>
+        GetConnectedDevicesAsync(
+            ModemCandidate candidate,
+            CancellationToken cancellationToken = default)
+    {
+        EnsureClient(candidate.Gateway);
+        await EnsureSessionAsync(cancellationToken);
+
+        var xml = await GetXmlAsync(
+            "api/wlan/host-list",
+            cancellationToken,
+            throwOnApiError: false);
+
+        var result = new List<ConnectedDevice>();
+
+        if (!xml.Name.LocalName.Equals(
+                "error",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            AddClientNodes(
+                xml,
+                result,
+                "Host");
+        }
+
+        if (result.Count == 0)
+        {
+            try
+            {
+                var stations = await GetXmlAsync(
+                    "api/wlan/station-information",
+                    cancellationToken,
+                    throwOnApiError: false);
+
+                if (!stations.Name.LocalName.Equals(
+                        "error",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    AddClientNodes(stations, result, "Host");
+                    AddClientNodes(stations, result, "Station");
+                    AddClientNodes(stations, result, "WifiHost");
+                }
+            }
+            catch
+            {
+                // Optional fallback endpoint.
+            }
+        }
+
+        var clients = result
+            .Where(x =>
+                x.IpAddress != "-" ||
+                x.MacAddress != "-")
+            .GroupBy(
+                x => x.MacAddress != "-"
+                    ? x.MacAddress
+                    : x.IpAddress,
+                StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .ToList();
+
+        try
+        {
+            clients = await EnrichClientTrafficAsync(
+                clients,
+                cancellationToken);
+        }
+        catch
+        {
+            // Per-client counters are optional on Huawei firmware.
+        }
+
+        return clients;
+    }
+
+    private async Task<List<ConnectedDevice>>
+        EnrichClientTrafficAsync(
+            List<ConnectedDevice> clients,
+            CancellationToken cancellationToken)
+    {
+        var xml = await GetXmlAsync(
+            "api/monitoring/lan-host-detail",
+            cancellationToken,
+            throwOnApiError: false);
+
+        if (xml.Name.LocalName.Equals(
+                "error",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return clients;
+        }
+
+        var enriched =
+            new List<ConnectedDevice>(clients.Count);
+
+        foreach (var client in clients)
+        {
+            var match =
+                xml.DescendantsAndSelf()
+                    .FirstOrDefault(node =>
+                    {
+                        var mac = Value(
+                            node,
+                            "MacAddress",
+                            "MACAddress",
+                            "macaddress",
+                            "Mac",
+                            "MAC");
+
+                        return !string.IsNullOrWhiteSpace(mac) &&
+                               MacEquals(
+                                   mac,
+                                   client.MacAddress);
+                    });
+
+            if (match is null)
+            {
+                enriched.Add(client);
+                continue;
+            }
+
+            var upload = ParseLong(
+                Value(
+                    match,
+                    "UploadBytes",
+                    "UpBytes",
+                    "CurrentUpload",
+                    "TotalUpload",
+                    "Upload"));
+
+            var download = ParseLong(
+                Value(
+                    match,
+                    "DownloadBytes",
+                    "DownBytes",
+                    "CurrentDownload",
+                    "TotalDownload",
+                    "Download"));
+
+            enriched.Add(
+                client with
+                {
+                    UploadBytes =
+                        upload ?? client.UploadBytes,
+                    DownloadBytes =
+                        download ?? client.DownloadBytes
+                });
+        }
+
+        return enriched;
     }
 
     public async Task<SmsCounts> GetSmsCountsAsync(
@@ -917,12 +1249,133 @@ public sealed class HuaweiHiLinkAdapter :
     private static int? ParseInt(string? value) =>
         int.TryParse(value, out var result) ? result : null;
 
+    private static long? ParseLong(string? value) =>
+        long.TryParse(value, out var result) ? result : null;
+
     private static bool? ParseBool01(string? value) => value switch
     {
         "1" => true,
         "0" => false,
         _ => null
     };
+
+    private static void AddWifiSetting(
+        XElement payload,
+        string name,
+        string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+            payload.Add(new XElement(name, value));
+    }
+
+    private static void AddClientNodes(
+        XElement xml,
+        List<ConnectedDevice> output,
+        string nodeName)
+    {
+        foreach (var node in
+                 xml.Descendants()
+                    .Where(x =>
+                        x.Name.LocalName.Equals(
+                            nodeName,
+                            StringComparison.OrdinalIgnoreCase)))
+        {
+            var ip = Value(
+                node,
+                "IpAddress",
+                "IPAddress",
+                "ipaddress",
+                "IP");
+
+            var mac = Value(
+                node,
+                "MacAddress",
+                "MACAddress",
+                "macaddress",
+                "Mac",
+                "MAC");
+
+            if (string.IsNullOrWhiteSpace(ip) &&
+                string.IsNullOrWhiteSpace(mac))
+            {
+                continue;
+            }
+
+            output.Add(
+                new ConnectedDevice(
+                    HostName:
+                        Value(
+                            node,
+                            "HostName",
+                            "hostname",
+                            "Name",
+                            "DeviceName")
+                        ?? "Unknown device",
+                    IpAddress:
+                        ip ?? "-",
+                    MacAddress:
+                        NormalizeMac(mac) ?? mac ?? "-",
+                    AssociatedTimeSeconds:
+                        ParseLong(
+                            Value(
+                                node,
+                                "AssociatedTime",
+                                "associatedtime",
+                                "ConnectTime")),
+                    UploadBytes:
+                        ParseLong(
+                            Value(
+                                node,
+                                "UploadBytes",
+                                "UpBytes",
+                                "CurrentUpload",
+                                "TotalUpload",
+                                "Upload")),
+                    DownloadBytes:
+                        ParseLong(
+                            Value(
+                                node,
+                                "DownloadBytes",
+                                "DownBytes",
+                                "CurrentDownload",
+                                "TotalDownload",
+                                "Download"))));
+        }
+    }
+
+    private static string? NormalizeMac(
+        string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var hex = new string(
+            value.Where(Uri.IsHexDigit).ToArray())
+            .ToUpperInvariant();
+
+        if (hex.Length != 12)
+            return null;
+
+        return string.Join(
+            ":",
+            Enumerable.Range(0, 6)
+                .Select(i =>
+                    hex.Substring(i * 2, 2)));
+    }
+
+    private static bool MacEquals(
+        string? left,
+        string? right)
+    {
+        var a = NormalizeMac(left);
+        var b = NormalizeMac(right);
+
+        return a is not null &&
+               b is not null &&
+               a.Equals(
+                   b,
+                   StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string? ErrorCode(XElement xml) =>
         Value(xml, "code", "Code");
