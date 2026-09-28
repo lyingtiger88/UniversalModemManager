@@ -335,7 +335,8 @@
                                         <StackPanel Grid.Column="1" Spacing="6">
                                             <TextBlock Text="Model" />
                                             <ComboBox x:Name="ModelComboBox"
-                                                      HorizontalAlignment="Stretch" />
+                                                      HorizontalAlignment="Stretch"
+                                                      SelectionChanged="ModelComboBox_SelectionChanged" />
                                         </StackPanel>
 
                                         <StackPanel Grid.Row="1" Spacing="6">
