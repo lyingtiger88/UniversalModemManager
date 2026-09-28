@@ -271,7 +271,7 @@
                                         </StackPanel>
                                     </Grid>
 
-                                    <Separator />
+                                    <Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="0,2" />
 
                                     <Grid>
                                         <Grid.ColumnDefinitions>
