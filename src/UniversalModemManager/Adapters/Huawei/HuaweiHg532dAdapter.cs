@@ -638,17 +638,44 @@ public sealed class HuaweiHg532dAdapter :
     private static bool IsSafeLocalResource(
         string value)
     {
-        if (Uri.TryCreate(
+        if (string.IsNullOrWhiteSpace(value) ||
+            Uri.TryCreate(
                 value,
                 UriKind.Absolute,
-                out _))
+                out _) ||
+            value.StartsWith(
+                "//",
+                StringComparison.Ordinal) ||
+            value.Contains('\\'))
         {
             return false;
         }
 
-        return !value.StartsWith(
-            "//",
-            StringComparison.Ordinal);
+        string decoded;
+        try
+        {
+            decoded = Uri.UnescapeDataString(value);
+        }
+        catch (UriFormatException)
+        {
+            return false;
+        }
+
+        var pathOnly =
+            decoded.Split(
+                '?',
+                2)[0]
+                .Split(
+                    '#',
+                    2)[0];
+
+        return !pathOnly
+            .Split(
+                '/',
+                StringSplitOptions.RemoveEmptyEntries)
+            .Any(segment =>
+                segment == ".." ||
+                segment == ".");
     }
 
     private static string NormalizeLocalPath(
